@@ -70,7 +70,7 @@ def main():
     num_channels = len(channels)
     input_mode = AnalogInputMode.DIFF
     input_range = AnalogInputRange.BIP_10V
-    scan_rate = 100.0  # Adjusted to approximately match the original behavior (1 update/second)
+    scan_rate = 1000.0  # Matches the old code's scan rate
     options = OptionFlags.CONTINUOUS
 
     # Setup for writing to a CSV file
@@ -119,9 +119,12 @@ def stop_and_cleanup(hat):
 
 def read_and_display_data(hat, num_channels, csv_writer, csv_file, db_cloud, table_name, resistor_value, pressure_lowest, pressure_highest):
     """
-    Reads and processes data from the DAQ.
+    Reads and processes data from the DAQ with aggregation.
     """
     timeout = 5.0
+    buffer_size_per_channel = 1000  # Matches the old code's buffer size
+    aggregation_buffer = np.empty((buffer_size_per_channel, num_channels))
+    samples_collected = 0
 
     while True:
         try:
@@ -133,49 +136,48 @@ def read_and_display_data(hat, num_channels, csv_writer, csv_file, db_cloud, tab
             if read_result.buffer_overrun:
                 logging.warning("Buffer overrun detected. Restarting acquisition.")
                 stop_and_cleanup(hat)
-                start_acquisition(hat, chan_list_to_mask(range(num_channels)), 0, 100.0, OptionFlags.CONTINUOUS)
+                start_acquisition(hat, chan_list_to_mask(range(num_channels)), 0, 1000.0, OptionFlags.CONTINUOUS)
                 continue
 
-            # Process data
             new_samples = np.array(read_result.data).reshape(-1, num_channels)
-            aggregated_values = np.mean(new_samples, axis=0)
-            currents = []
-            pressures = []
+            samples_to_copy = min(buffer_size_per_channel - samples_collected, new_samples.shape[0])
+            aggregation_buffer[samples_collected:samples_collected+samples_to_copy, :] = new_samples[:samples_to_copy, :]
+            samples_collected += samples_to_copy
 
-            for value in aggregated_values:
-                # Step 1: Convert voltage to current in mA
-                current_mA = (value / resistor_value) * 1000
-                currents.append(current_mA)
+            if samples_collected >= buffer_size_per_channel:
+                aggregated_values = np.mean(aggregation_buffer, axis=0)
+                samples_collected = 0  # Reset the sample count
 
-                # Step 2: Map current to pressure range
-                pressure = ((current_mA - 4) * (pressure_highest - pressure_lowest) / 16) + pressure_lowest
-                pressures.append(pressure)
+                # Calculate currents and pressures
+                currents = [(value / resistor_value) * 1000 for value in aggregated_values]
+                pressures = [
+                    ((current - 4) * (pressure_highest - pressure_lowest) / 16) + pressure_lowest
+                    for current in currents
+                ]
 
-            timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 
-            # Display output for each channel on a separate line
-            print(f"{timestamp}")
-            for i, (voltage, current, pressure) in enumerate(zip(aggregated_values, currents, pressures)):
-                print(f"  Channel {i+1}: Voltage={voltage:.2f} V, Current={current:.2f} mA, Pressure={pressure:.2f} bar")
+                # Display output for each channel
+                print(f"{timestamp}")
+                for i, (voltage, current, pressure) in enumerate(zip(aggregated_values, currents, pressures)):
+                    print(f"  Channel {i+1}: Voltage={voltage:.2f} V, Current={current:.2f} mA, Pressure={pressure:.2f} bar")
 
-            # Write to CSV
-            csv_writer.writerow([timestamp] + aggregated_values.tolist() + currents + pressures)
-            csv_file.flush()
+                # Write to CSV
+                csv_writer.writerow([timestamp] + aggregated_values.tolist() + currents + pressures)
+                csv_file.flush()
 
-            # Log to database
-            if db_cloud:
-                try:
-                    channels_array = np.array(aggregated_values.tolist() + currents + pressures)  # Convert to NumPy array
-                    success = db_cloud.log(table=table_name, channels=channels_array)
-                    if not success:
-                        logging.warning(f"Failed to log data to table '{table_name}'.")
-                        db_cloud = reconnect_db()
-                except Exception as e:
-                    logging.error(f"Database logging failed: {e}")
-            else:
-                db_cloud = reconnect_db()
-
-            sleep(1.0)  # Ensure updates are approximately 1 second apart
+                # Log to database
+                if db_cloud:
+                    try:
+                        channels_array = np.array(aggregated_values.tolist() + currents + pressures)
+                        success = db_cloud.log(table=table_name, channels=channels_array)
+                        if not success:
+                            logging.warning(f"Failed to log data to table '{table_name}'.")
+                            db_cloud = reconnect_db()
+                    except Exception as e:
+                        logging.error(f"Database logging failed: {e}")
+                else:
+                    db_cloud = reconnect_db()
 
         except KeyboardInterrupt:
             logging.info("Keyboard interrupt received. Stopping DAQ.")
