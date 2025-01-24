@@ -79,7 +79,9 @@ def main():
     filename = f"{timestamp}.csv"
     csv_file = open(filename, 'w', newline='')
     csv_writer = csv.writer(csv_file)
-    csv_writer.writerow(["Timestamp"] + [f"Voltage_Ch{i}" for i in channels] + [f"Pressure_Ch{i}" for i in channels])
+    csv_writer.writerow(["Timestamp"] + [f"Voltage_Ch{i}" for i in channels] +
+                         [f"Current_Ch{i} (mA)" for i in channels] +
+                         [f"Pressure_Ch{i} (bar)" for i in channels])
     logging.info(f"CSV logging started. File: {filename}")
 
     # Initialize database logging
@@ -137,11 +139,13 @@ def read_and_display_data(hat, num_channels, csv_writer, csv_file, db_cloud, tab
             # Process data
             new_samples = np.array(read_result.data).reshape(-1, num_channels)
             aggregated_values = np.mean(new_samples, axis=0)
+            currents = []
             pressures = []
 
             for value in aggregated_values:
                 # Step 1: Convert voltage to current in mA
                 current_mA = (value / resistor_value) * 1000
+                currents.append(current_mA)
 
                 # Step 2: Map current to pressure range
                 pressure = ((current_mA - 4) * (pressure_highest - pressure_lowest) / 16) + pressure_lowest
@@ -149,18 +153,19 @@ def read_and_display_data(hat, num_channels, csv_writer, csv_file, db_cloud, tab
 
             timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 
-            # Display and log both voltage and pressure for each channel
-            voltage_pressure_pairs = [(f"Ch{i+1}: Voltage={voltage:.2f}V, Pressure={pressure:.2f} bar") for i, (voltage, pressure) in enumerate(zip(aggregated_values, pressures))]
-            print(f"{timestamp} | " + " | ".join(voltage_pressure_pairs))
+            # Display output for each channel on a separate line
+            print(f"{timestamp}")
+            for i, (voltage, current, pressure) in enumerate(zip(aggregated_values, currents, pressures)):
+                print(f"  Channel {i+1}: Voltage={voltage:.2f} V, Current={current:.2f} mA, Pressure={pressure:.2f} bar")
 
             # Write to CSV
-            csv_writer.writerow([timestamp] + aggregated_values.tolist() + pressures)
+            csv_writer.writerow([timestamp] + aggregated_values.tolist() + currents + pressures)
             csv_file.flush()
 
             # Log to database
             if db_cloud:
                 try:
-                    channels_array = np.array(aggregated_values.tolist() + pressures)  # Convert to NumPy array
+                    channels_array = np.array(aggregated_values.tolist() + currents + pressures)  # Convert to NumPy array
                     success = db_cloud.log(table=table_name, channels=channels_array)
                     if not success:
                         logging.warning(f"Failed to log data to table '{table_name}'.")
