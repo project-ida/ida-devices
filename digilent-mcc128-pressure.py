@@ -9,6 +9,7 @@ import csv
 import argparse
 import numpy as np
 import logging
+from collections import namedtuple
 from daqhats import mcc128, OptionFlags, HatIDs, HatError, AnalogInputMode, \
     AnalogInputRange
 from daqhats_utils import select_hat_device, chan_list_to_mask
@@ -50,6 +51,22 @@ def reconnect_db():
         logging.error(f"Reconnection failed: {e}")
         return None
 
+def setup_csv(channels):
+    """
+    Setup and return a CSV writer and its associated file handle in a named tuple.
+    """
+    CsvHandle = namedtuple('CsvHandle', ['writer', 'file'])
+    start_time = datetime.now()
+    timestamp = start_time.strftime("%Y%m%d_%H%M%S")
+    filename = f"{timestamp}.csv"
+    csv_file = open(filename, 'w', newline='')
+    csv_writer = csv.writer(csv_file)
+    csv_writer.writerow(["Timestamp"] + [f"Voltage_Ch{i}" for i in channels] +
+                         [f"Current_Ch{i} (mA)" for i in channels] +
+                         [f"Pressure_Ch{i} (bar)" for i in channels])
+    logging.info(f"CSV logging started. File: {filename}")
+    return CsvHandle(writer=csv_writer, file=csv_file)
+
 def main():
     # Parse command-line arguments
     parser = argparse.ArgumentParser(description="DAQ Logging Script")
@@ -73,16 +90,8 @@ def main():
     scan_rate = 1000.0  # Matches the old code's scan rate
     options = OptionFlags.CONTINUOUS
 
-    # Setup for writing to a CSV file
-    start_time = datetime.now()
-    timestamp = start_time.strftime("%Y%m%d_%H%M%S")
-    filename = f"{timestamp}.csv"
-    csv_file = open(filename, 'w', newline='')
-    csv_writer = csv.writer(csv_file)
-    csv_writer.writerow(["Timestamp"] + [f"Voltage_Ch{i}" for i in channels] +
-                         [f"Current_Ch{i} (mA)" for i in channels] +
-                         [f"Pressure_Ch{i} (bar)" for i in channels])
-    logging.info(f"CSV logging started. File: {filename}")
+    # Setup CSV logging
+    csv_handle = setup_csv(channels)
 
     # Initialize database logging
     db_cloud = init_db()
@@ -95,11 +104,11 @@ def main():
         input('\nPress ENTER to continue ...')
         start_acquisition(hat, channel_mask, 0, scan_rate, options)
         logging.info("DAQ acquisition started. Press Ctrl-C to stop.")
-        read_and_display_data(hat, num_channels, csv_writer, csv_file, db_cloud, table_name, resistor_value, pressure_lowest, pressure_highest)
+        read_and_display_data(hat, num_channels, csv_handle, db_cloud, table_name, resistor_value, pressure_lowest, pressure_highest)
     except (HatError, ValueError) as err:
         logging.error(f"Hardware error: {err}")
     finally:
-        csv_file.close()
+        csv_handle.file.close()  # Only reference the file here for cleanup
         if db_cloud:
             db_cloud.close()
         logging.info("DAQ acquisition stopped. Resources cleaned up.")
@@ -117,7 +126,7 @@ def stop_and_cleanup(hat):
     hat.a_in_scan_stop()
     hat.a_in_scan_cleanup()
 
-def read_and_display_data(hat, num_channels, csv_writer, csv_file, db_cloud, table_name, resistor_value, pressure_lowest, pressure_highest):
+def read_and_display_data(hat, num_channels, csv_handle, db_cloud, table_name, resistor_value, pressure_lowest, pressure_highest):
     """
     Reads and processes data from the DAQ with aggregation.
     """
@@ -163,8 +172,8 @@ def read_and_display_data(hat, num_channels, csv_writer, csv_file, db_cloud, tab
                     print(f"  Channel {i+1}: Voltage={voltage:.2f} V, Current={current:.2f} mA, Pressure={pressure:.2f} bar")
 
                 # Write to CSV
-                csv_writer.writerow([timestamp] + aggregated_values.tolist() + currents + pressures)
-                csv_file.flush()
+                csv_handle.writer.writerow([timestamp] + aggregated_values.tolist() + currents + pressures)
+                csv_handle.file.flush()
 
                 # Log to database
                 if db_cloud:
