@@ -27,14 +27,14 @@ import os
 from collections import namedtuple
 from datetime import datetime
 from daqhats import mcc134, HatIDs, HatError, TcTypes
-from daqhats_utils import select_hat_device
 
 # Add the parent directory (../) to the Python path
 parent_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 sys.path.append(parent_dir)
 
-# Add the helper library path if needed
+# Add the helper library path
 sys.path.append(os.path.expanduser("~/daqhats/examples/python/mcc134"))
+from daqhats_utils import select_hat_device
 
 # Logging Setup
 logging.basicConfig(
