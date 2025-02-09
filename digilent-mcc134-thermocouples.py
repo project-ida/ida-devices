@@ -16,9 +16,17 @@ from __future__ import print_function
 from time import sleep
 from sys import stdout
 from daqhats import mcc134, HatIDs, HatError, TcTypes
-from daqhats_utils import select_hat_device, tc_type_to_string
 
+import sys
+import os
+
+# Add the parent directory (../) to the Python path
+parent_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+sys.path.append(parent_dir)
+
+# Add the helper library 
 sys.path.append(os.path.expanduser("~/daqhats/examples/python/mcc134"))  # Adjust this path
+from daqhats_utils import select_hat_device, tc_type_to_string
 
 # Constants
 CURSOR_BACK_2 = '\x1b[2D'
