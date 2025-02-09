@@ -3,6 +3,7 @@ from builtins import *
 import time
 import logging
 import numpy as np
+import argparse
 from uldaq import TempScale, DaqDeviceInfo, get_daq_device_inventory, InterfaceType, DaqDevice
 from collections import namedtuple
 from datetime import datetime
@@ -99,6 +100,13 @@ def read_temperatures(device: DaqDevice):
     return output
 
 def main():
+    # Parse command-line arguments
+    parser = argparse.ArgumentParser(description="USB-TEMP DAQ Logging Script")
+    parser.add_argument('--table', required=True, help="Name of the database table to log data to.")
+    args = parser.parse_args()
+
+    table_name = args.table  # Assign the passed table name
+
     # Initialize database connection
     db_cloud = init_db()
 
@@ -126,9 +134,9 @@ def main():
 
                 # Log data to the database
                 temperature_array = np.array(temperature_values)
-                success_cloud = db_cloud.log(table="newtempdaq", channels=temperature_array)
+                success_cloud = db_cloud.log(table=table_name, channels=temperature_array)
                 if not success_cloud:
-                    logging.warning("Failed to log temperature data to the database.")
+                    logging.warning(f"Failed to log temperature data to table '{table_name}'.")
                     db_cloud = reconnect_db()
 
             except Exception as e:
