@@ -42,25 +42,25 @@ read -e -p "Enter 1 or 2: " MODE  # Enables arrow keys & editing
 
 if [[ "$MODE" == "1" ]]; then
     # Detect available device scripts
-    device_SCRIPTS=($(ls "$SCRIPT_DIR"/*.py 2>/dev/null | xargs -n 1 basename))
+    DEVICE_SCRIPTS=($(ls "$SCRIPT_DIR"/*.py 2>/dev/null | xargs -n 1 basename))
 
-    if [ ${#device_SCRIPTS[@]} -eq 0 ]; then
+    if [ ${#DEVICE_SCRIPTS[@]} -eq 0 ]; then
         echo "❌ No device scripts found in $SCRIPT_DIR!"
         exit 1
     fi
 
     # Display available scripts
     echo -e "\n📡 Available device scripts:"
-    for i in "${!device_SCRIPTS[@]}"; do
-        echo "$((i+1)). ${device_SCRIPTS[$i]}"
+    for i in "${!DEVICE_SCRIPTS[@]}"; do
+        echo "$((i+1)). ${DEVICE_SCRIPTS[$i]}"
     done
 
     # Get user selection
     read -e -p "Enter the numbers of the scripts to install (comma-separated): " INPUT
     SELECTED_DEVICES=()
     for num in $(echo $INPUT | tr "," " "); do
-        if [[ $num =~ ^[0-9]+$ ]] && (( num >= 1 && num <= ${#device_SCRIPTS[@]} )); then
-            SELECTED_DEVICES+=("${device_SCRIPTS[$((num-1))]}")
+        if [[ $num =~ ^[0-9]+$ ]] && (( num >= 1 && num <= ${#DEVICE_SCRIPTS[@]} )); then
+            SELECTED_DEVICES+=("${DEVICE_SCRIPTS[$((num-1))]}")
         fi
     done
 
