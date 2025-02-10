@@ -13,7 +13,7 @@ list_installed_devices() {
         return
     fi
 
-    INSTALLED_DEVICES=($(grep "tmux new-session" "$STARTUP_SCRIPT" | awk -F "'" '{print $2}' | awk '$1 == "python" {print $2}' | xargs -n 1 basename | sed 's/\.py$//'))
+    INSTALLED_DEVICES=($(grep "tmux new-session" "$STARTUP_SCRIPT" | awk -F "'" '{print $2}' | awk '$1 == "python" {print $2}' | xargs -n 1 basename))
 
     if [ ${#INSTALLED_DEVICES[@]} -eq 0 ]; then
         echo "❌ No devices are currently set to start at boot."
@@ -31,7 +31,7 @@ update_startup_script() {
     # Read currently installed devices
     CURRENT_DEVICES=()
     if [ -f "$STARTUP_SCRIPT" ]; then
-        CURRENT_DEVICES=($(grep "tmux new-session" "$STARTUP_SCRIPT" | awk -F "'" '{print $2}' | awk '$1 == "python" {print $2}' | xargs -n 1 basename | sed 's/\.py$//'))
+        CURRENT_DEVICES=($(grep "tmux new-session" "$STARTUP_SCRIPT" | awk -F "'" '{print $2}' | awk '$1 == "python" {print $2}' | xargs -n 1 basename))
     fi
 
 
@@ -45,7 +45,7 @@ update_startup_script() {
     echo "#!/bin/bash" > "$STARTUP_SCRIPT"
     for device in "${UNIQUE_DEVICES[@]}"; do
         SESSION_NAME="${device%.py}"
-        echo "tmux has-session -t $SESSION_NAME 2>/dev/null || tmux new-session -d -s $SESSION_NAME 'python $SCRIPT_DIR/$device; echo Press Enter to exit...; read'" >> "$STARTUP_SCRIPT"
+        echo "tmux has-session -t $SESSION_NAME 2>/dev/null || tmux new-session -d -s $SESSION_NAME 'python $SCRIPT_DIR/$device ; echo Press Enter to exit...; read'" >> "$STARTUP_SCRIPT"
     done
 
     chmod +x "$STARTUP_SCRIPT"
@@ -61,7 +61,7 @@ remove_devices_from_startup() {
     fi
 
     # Read currently installed devices from the startup script
-    CURRENT_DEVICES=($(grep "tmux new-session" "$STARTUP_SCRIPT" | awk -F "'" '{print $2}' | awk '$1 == "python" {print $2}' | xargs -n 1 basename | sed 's/\.py$//'))
+    CURRENT_DEVICES=($(grep "tmux new-session" "$STARTUP_SCRIPT" | awk -F "'" '{print $2}' | awk '$1 == "python" {print $2}' | xargs -n 1 basename))
 
     # Create a new list that excludes devices marked for removal
     NEW_DEVICES=()
@@ -75,7 +75,7 @@ remove_devices_from_startup() {
     echo "#!/bin/bash" > "$STARTUP_SCRIPT"
     for device in "${NEW_DEVICES[@]}"; do
         SESSION_NAME="${device%.py}"
-        echo "tmux has-session -t $SESSION_NAME 2>/dev/null || tmux new-session -d -s $SESSION_NAME 'python $SCRIPT_DIR/$device; echo Press Enter to exit...; read'" >> "$STARTUP_SCRIPT"
+        echo "tmux has-session -t $SESSION_NAME 2>/dev/null || tmux new-session -d -s $SESSION_NAME 'python $SCRIPT_DIR/$device ; echo Press Enter to exit...; read'" >> "$STARTUP_SCRIPT"
     done
 
     chmod +x "$STARTUP_SCRIPT"
@@ -140,8 +140,8 @@ if [[ "$MODE" == "1" ]]; then
 
     # Set up cron jobs
     echo "⏳ Configuring cron jobs..."
-    (crontab -l 2>/dev/null | grep -v "$STARTUP_SCRIPT" ; echo "$CRON_JOB") | crontab -
-    (crontab -l 2>/dev/null | grep -v "$STARTUP_SCRIPT" ; echo "$CRON_RESTART") | crontab -
+    (crontab -l 2>/dev/null | grep -v "$STARTUP_SCRIPT" ; echo "$CRON_JOB"; echo "$CRON_RESTART") | crontab -
+
 
     echo -e "\n✅ Installation complete! Your selected devices will start automatically on reboot and restart if they crash."
 
@@ -154,7 +154,7 @@ elif [[ "$MODE" == "2" ]]; then
     fi
 
     # Refresh installed devices list (ensures we work with the latest state)
-    INSTALLED_DEVICES=($(grep "tmux new-session" "$STARTUP_SCRIPT" | awk -F "'" '{print $2}' | awk '$1 == "python" {print $2}' | xargs -n 1 basename | sed 's/\.py$//'))
+    INSTALLED_DEVICES=($(grep "tmux new-session" "$STARTUP_SCRIPT" | awk -F "'" '{print $2}' | awk '$1 == "python" {print $2}' | xargs -n 1 basename))
 
     # Check if there are devices available to remove
     if [ ${#INSTALLED_DEVICES[@]} -eq 0 ]; then

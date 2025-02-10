@@ -17,7 +17,7 @@ RUNNING_DEVICES=($(tmux ls 2>/dev/null | awk -F ':' '{print $1}'))
 # Get list of installed devices from `start_devices.sh`
 INSTALLED_DEVICES=()
 if [ -f "$STARTUP_SCRIPT" ]; then
-    INSTALLED_DEVICES=($(grep "tmux new-session" "$STARTUP_SCRIPT" | awk -F "'" '{print $2}' | awk '$1 == "python" {print $2}' | xargs -n 1 basename | sed 's/\.py$//'))
+    INSTALLED_DEVICES=($(grep "tmux new-session" "$STARTUP_SCRIPT" | awk -F "'" '{print $2}' | awk '$1 == "python" {print $2}' | xargs -n 1 basename))
 fi
 
 if [[ "$MODE" == "1" || "$MODE" == "3" ]]; then
