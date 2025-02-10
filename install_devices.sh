@@ -12,12 +12,23 @@ list_installed_devices() {
         echo "❌ No devices are configured to start automatically."
         return
     fi
-    grep "tmux new-session" "$STARTUP_SCRIPT" | awk -F '"' '{print "✅ " $2}'
+
+    INSTALLED_DEVICES=($(grep "tmux new-session" "$STARTUP_SCRIPT" | awk -F "'" '{print $2}' | awk '{print $NF}' | xargs -n 1 basename))
+
+    if [ ${#INSTALLED_DEVICES[@]} -eq 0 ]; then
+        echo "❌ No devices are currently set to start at boot."
+        return
+    fi
+
+    for device in "${INSTALLED_DEVICES[@]}"; do
+        echo "✅ $device"
+    done
 }
+
 
 # Function to update the startup script
 update_startup_script() {
-    echo "🛠 Updating startup script..."
+    echo "🛠  Updating startup script..."
     echo "#!/bin/bash" > "$STARTUP_SCRIPT"
     for device in "${SELECTED_DEVICES[@]}"; do
         SESSION_NAME="${device%.py}"
@@ -88,8 +99,8 @@ elif [[ "$MODE" == "2" ]]; then
         exit 1
     fi
 
-    # Extract installed devices
-    INSTALLED_DEVICES=($(grep "tmux new-session" "$STARTUP_SCRIPT" | awk -F "'" '{print $2}'))
+
+
 
     # Ask which ones to remove
     echo -e "\n🗑️  Select devices to REMOVE from startup:"
