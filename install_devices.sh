@@ -27,7 +27,7 @@ update_startup_script() {
 }
 
 # Ask the user whether to add or remove devices
-echo -e "\n🔧 Would you like to: \n1️⃣ Add devices to startup \n2️⃣ Remove devices from startup"
+echo -e "\n🔧 Would you like to: \n1️⃣  Add devices to startup \n2️⃣  Remove devices from startup"
 read -p "Enter 1 or 2: " MODE
 
 if [[ "$MODE" == "1" ]]; then
@@ -92,7 +92,7 @@ elif [[ "$MODE" == "2" ]]; then
     INSTALLED_deviceS=($(grep "tmux new-session" "$STARTUP_SCRIPT" | awk -F "'" '{print $2}'))
 
     # Ask which ones to remove
-    echo -e "\n🗑️ Select devices to REMOVE from startup:"
+    echo -e "\n🗑️  Select devices to REMOVE from startup:"
     for i in "${!INSTALLED_deviceS[@]}"; do
         echo "$((i+1)). ${INSTALLED_deviceS[$i]}"
     done
