@@ -88,7 +88,7 @@ Once the installation is complete, you can use the `manage_devices.sh` script to
 To view the real-time output of a running device, run:
 
 ```sh
-./manage_devices.sh
+bash manage_devices.sh
 ```
 
 1. Select **"View a device's output"** from the menu.
@@ -101,7 +101,7 @@ To view the real-time output of a running device, run:
 To stop a device that is currently running:
 
 ```sh
-./manage_devices.sh
+bash manage_devices.sh
 ```
 
 1. Select **"Stop a running device"** from the menu.
