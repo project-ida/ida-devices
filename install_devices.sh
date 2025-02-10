@@ -51,6 +51,45 @@ update_startup_script() {
     chmod +x "$STARTUP_SCRIPT"
 }
 
+remove_devices_from_startup() {
+    echo "🗑️  Removing selected devices from startup..."
+
+    # Ensure the startup script exists before modifying
+    if [ ! -f "$STARTUP_SCRIPT" ]; then
+        echo "❌ No startup script found. Exiting..."
+        return
+    fi
+
+    # Read currently installed devices from the startup script
+    CURRENT_DEVICES=($(grep "tmux new-session" "$STARTUP_SCRIPT" | awk -F "'" '{print $2}' | awk '{print $NF}' | xargs -n 1 basename))
+
+    # Create a new list that excludes devices marked for removal
+    NEW_DEVICES=()
+    for device in "${CURRENT_DEVICES[@]}"; do
+        if [[ ! " ${REMOVE_DEVICES[*]} " =~ " ${device} " ]]; then
+            NEW_DEVICES+=("$device")
+        fi
+    done
+
+    # Rebuild the startup script with remaining devices
+    echo "#!/bin/bash" > "$STARTUP_SCRIPT"
+    for device in "${NEW_DEVICES[@]}"; do
+        SESSION_NAME="${device%.py}"
+        echo "tmux has-session -t $SESSION_NAME 2>/dev/null || tmux new-session -d -s $SESSION_NAME 'python $SCRIPT_DIR/$device'" >> "$STARTUP_SCRIPT"
+    done
+
+    chmod +x "$STARTUP_SCRIPT"
+
+    # If no devices remain, delete the startup script and remove cron jobs
+    if [ ${#NEW_DEVICES[@]} -eq 0 ]; then
+        echo "🛑 No devices left. Removing cron jobs..."
+        (crontab -l 2>/dev/null | grep -v "$STARTUP_SCRIPT") | crontab -
+        rm -f "$STARTUP_SCRIPT"
+    fi
+
+    echo "✅ Selected devices have been removed from startup."
+}
+
 
 # Ask the user whether to add or remove devices
 echo -e "\n🔧 Would you like to: \n1️⃣  Add devices to startup \n2️⃣  Remove devices from startup"
@@ -114,14 +153,26 @@ elif [[ "$MODE" == "2" ]]; then
         exit 1
     fi
 
-    # Ask which ones to remove
+    # Refresh installed devices list (ensures we work with the latest state)
+    INSTALLED_DEVICES=($(grep "tmux new-session" "$STARTUP_SCRIPT" | awk -F "'" '{print $2}' | awk '{print $NF}' | xargs -n 1 basename))
+
+    # Check if there are devices available to remove
+    if [ ${#INSTALLED_DEVICES[@]} -eq 0 ]; then
+        echo "❌ No devices are currently installed."
+        exit 1
+    fi
+
+    # Display installed scripts with indexed numbers
     echo -e "\n🗑️  Select devices to REMOVE from startup:"
     for i in "${!INSTALLED_DEVICES[@]}"; do
         echo "$((i+1)). ${INSTALLED_DEVICES[$i]}"
     done
 
+    # Capture user input
     read -e -p "Enter the numbers of the scripts to remove (comma-separated): " REMOVE_INPUT
     REMOVE_DEVICES=()
+
+    # Convert user input into an array of selected devices
     for num in $(echo $REMOVE_INPUT | tr "," " "); do
         if [[ $num =~ ^[0-9]+$ ]] && (( num >= 1 && num <= ${#INSTALLED_DEVICES[@]} )); then
             REMOVE_DEVICES+=("${INSTALLED_DEVICES[$((num-1))]}")
@@ -133,18 +184,19 @@ elif [[ "$MODE" == "2" ]]; then
         exit 1
     fi
 
-    # Remove selected devices
+    # Filter out removed devices by rebuilding the list
     echo -e "\n🚀 Removing selected devices from startup..."
     SELECTED_DEVICES=()
     for device in "${INSTALLED_DEVICES[@]}"; do
-        if [[ ! " ${REMOVE_DEVICES[@]} " =~ " ${device} " ]]; then
+        if [[ ! " ${REMOVE_DEVICES[*]} " =~ " ${device} " ]]; then
             SELECTED_DEVICES+=("$device")
         fi
     done
 
-    update_startup_script
+    # Call update function to reflect changes
+    remove_devices_from_startup
 
-    # If no devices are left, remove the cron jobs
+    # If no devices are left, remove cron jobs and delete the startup script
     if [ ${#SELECTED_DEVICES[@]} -eq 0 ]; then
         echo "🛑 No devices left. Removing cron jobs..."
         (crontab -l 2>/dev/null | grep -v "$STARTUP_SCRIPT") | crontab -
