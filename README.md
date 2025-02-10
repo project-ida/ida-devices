@@ -24,8 +24,6 @@ This installs everything globally for seamless usage.
    ```
    inside the `ida-devices` directory.
 
----
-
 ### **Option 2: Using a Virtual Environment (Optional)**
 
 If you prefer to keep dependencies isolated, you can use a virtual environment:
@@ -52,8 +50,6 @@ If you prefer to keep dependencies isolated, you can use a virtual environment:
    pip install .
    ```
    inside the `ida-devices` directory.
-
----
 
 ## 🔧 Installing Devices
 
@@ -82,8 +78,6 @@ bash install_devices.sh
 2. Choose the devices you wish to remove.
 3. Confirm the selection, and the script will update the startup configuration.
 4. Removed devices will no longer start automatically but can be run manually.
-
----
 
 ## 📟 Manage Devices
 
@@ -133,5 +127,3 @@ tmux new-session -d -s <device_name> "python /path/to/device_script.py"
 ```
 
 This will run the selected device in the background using `tmux`.
-
----
