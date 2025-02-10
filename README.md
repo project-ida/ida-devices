@@ -71,8 +71,6 @@ bash install_devices.sh
 
 ### **Removing Devices**
 
-To remove a device from automatic startup:
-
 ```sh
 bash install_devices.sh
 ```
