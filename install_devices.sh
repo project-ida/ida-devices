@@ -25,7 +25,6 @@ list_installed_devices() {
     done
 }
 
-
 # Function to update the startup script
 update_startup_script() {
     echo "🛠  Updating startup script..."
@@ -39,7 +38,7 @@ update_startup_script() {
 
 # Ask the user whether to add or remove devices
 echo -e "\n🔧 Would you like to: \n1️⃣  Add devices to startup \n2️⃣  Remove devices from startup"
-read -p "Enter 1 or 2: " MODE
+read -e -p "Enter 1 or 2: " MODE  # Enables arrow keys & editing
 
 if [[ "$MODE" == "1" ]]; then
     # Detect available device scripts
@@ -57,7 +56,7 @@ if [[ "$MODE" == "1" ]]; then
     done
 
     # Get user selection
-    read -p "Enter the numbers of the scripts to install (comma-separated): " INPUT
+    read -e -p "Enter the numbers of the scripts to install (comma-separated): " INPUT
     SELECTED_DEVICES=()
     for num in $(echo $INPUT | tr "," " "); do
         if [[ $num =~ ^[0-9]+$ ]] && (( num >= 1 && num <= ${#device_SCRIPTS[@]} )); then
@@ -76,7 +75,7 @@ if [[ "$MODE" == "1" ]]; then
         echo "✅ $device"
     done
 
-    read -p "Proceed with installation? (y/n): " confirm
+    read -e -p "Proceed with installation? (y/n): " confirm
     if [[ "$confirm" != "y" ]]; then
         echo "❌ Installation aborted."
         exit 0
@@ -99,16 +98,13 @@ elif [[ "$MODE" == "2" ]]; then
         exit 1
     fi
 
-
-
-
     # Ask which ones to remove
     echo -e "\n🗑️  Select devices to REMOVE from startup:"
     for i in "${!INSTALLED_DEVICES[@]}"; do
         echo "$((i+1)). ${INSTALLED_DEVICES[$i]}"
     done
 
-    read -p "Enter the numbers of the scripts to remove (comma-separated): " REMOVE_INPUT
+    read -e -p "Enter the numbers of the scripts to remove (comma-separated): " REMOVE_INPUT
     REMOVE_DEVICES=()
     for num in $(echo $REMOVE_INPUT | tr "," " "); do
         if [[ $num =~ ^[0-9]+$ ]] && (( num >= 1 && num <= ${#INSTALLED_DEVICES[@]} )); then
