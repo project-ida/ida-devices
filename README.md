@@ -11,7 +11,7 @@ This installs everything globally for seamless usage.
 1. Clone the repository -
 
    ```sh
-   git clone https://github.com/your_repo/ida-devices.git
+   git clone https://github.com/project-ida/ida-devices.git
    ```
 
    in the home directory (usually the directory that the terminal starts in - denoted by `~`).
@@ -31,7 +31,7 @@ If you prefer to keep dependencies isolated, you can use a virtual environment:
 1. Clone the repository -
 
    ```sh
-   git clone https://github.com/your_repo/ida-devices.git
+   git clone https://github.com/project-ida/ida-devices.git
    ```
 
    in the home directory (usually the directory that the terminal starts in - denoted by `~`).
@@ -56,14 +56,14 @@ If you prefer to keep dependencies isolated, you can use a virtual environment:
 "Installing" a device means:
 
 - Allowing it to run at startup and re-run if it crashes (via cron)
-- Making it easier to start/top/view a device when running `manage_devices.sh`
+- Making it easier to start/top/view a device when running `manage-devices.sh`
 
 We use the `install_devices.sh` script for this.
 
 ### **Adding Devices**
 
 ```sh
-bash install_devices.sh
+bash install-devices.sh
 ```
 
 1. Select **"Add devices to startup"** from the menu.
@@ -72,7 +72,7 @@ bash install_devices.sh
 ### **Removing Devices**
 
 ```sh
-bash install_devices.sh
+bash install-devices.sh
 ```
 
 1. Select **"Remove devices from startup"** from the menu.
@@ -80,14 +80,14 @@ bash install_devices.sh
 
 ## 📟 Manage Devices
 
-Once device installation is complete, you can use the `manage_devices.sh` script to start/stop/view devices.
+Once device installation is complete, you can use the `manage-devices.sh` script to start/stop/view devices.
 
 ### **Viewing Device Output**
 
 To view the real-time output of a running device, run:
 
 ```sh
-bash manage_devices.sh
+bash manage-devices.sh
 ```
 
 1. Select **"View a device's output"** from the menu.
@@ -100,7 +100,7 @@ bash manage_devices.sh
 To start a device:
 
 ```sh
-bash manage_devices.sh
+bash manage-devices.sh
 ```
 
 1. Select **"Start a device"** from the menu.
@@ -112,7 +112,7 @@ bash manage_devices.sh
 To stop a device that is currently running:
 
 ```sh
-bash manage_devices.sh
+bash manage-devices.sh
 ```
 
 1. Select **"Stop a running device"** from the menu.
@@ -136,7 +136,7 @@ This will list all active `tmux` sessions, which correspond to running devices.
 If you want to manually start a device without adding it to startup:
 
 ```sh
-tmux new-session -d -s <device_name> "python /path/to/device_script.py"
+tmux new-session -d -s <device-name> "python /path/to/device-script.py"
 ```
 
 This will run the selected device in the background using `tmux`.
