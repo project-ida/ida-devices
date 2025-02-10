@@ -1,7 +1,7 @@
 #!/bin/bash
 
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"  # Detect the script directory
-STARTUP_SCRIPT="$SCRIPT_DIR/start_devices.sh"  # Store startup script in ida-devices directory
+STARTUP_SCRIPT="$SCRIPT_DIR/start-devices.sh"  # Store startup script in ida-devices directory
 CRON_JOB="@reboot $STARTUP_SCRIPT"
 CRON_RESTART="*/5 * * * * $STARTUP_SCRIPT"
 
