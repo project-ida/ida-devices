@@ -42,7 +42,7 @@ read -e -p "Enter 1 or 2: " MODE  # Enables arrow keys & editing
 
 if [[ "$MODE" == "1" ]]; then
     # Detect available device scripts
-    DEVICE_SCRIPTS=($(ls "$SCRIPT_DIR"/*.py 2>/dev/null | xargs -n 1 basename))
+    DEVICE_SCRIPTS=($(ls "$SCRIPT_DIR"/*.py 2>/dev/null | grep -v "setup.py" | xargs -n 1 basename))
 
     if [ ${#DEVICE_SCRIPTS[@]} -eq 0 ]; then
         echo "❌ No device scripts found in $SCRIPT_DIR!"
