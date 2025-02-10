@@ -108,6 +108,8 @@ bash manage_devices.sh
 2. Choose the device from the numbered list.
 3. The selected device will be stopped immediately.
 
+## Manual actions
+
 ### **Checking Running Devices**
 
 To check which devices are currently running, use:
@@ -118,7 +120,7 @@ tmux ls
 
 This will list all active `tmux` sessions, which correspond to running devices.
 
-### **Manually Starting Devices**
+### **Starting Devices**
 
 If you want to manually start a device without adding it to startup:
 
