@@ -171,4 +171,4 @@ cython_debug/
 .pypirc
 
 # Files generated after install
-start_devices.sh
+start-devices.sh
