@@ -1,1 +1,5 @@
-
+numpy
+daqhats
+mitcf
+pyserial
+uldaq
