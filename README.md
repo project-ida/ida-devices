@@ -53,9 +53,14 @@ If you prefer to keep dependencies isolated, you can use a virtual environment:
 
 ## 🔧 Installing Devices
 
-To install devices and configure them to run at startup, use the `install_devices.sh` script.
+"Installing" a device means:
 
-### **Adding Devices to Startup**
+- Allowing it to run at startup and re-run if it crashes (via cron)
+- Making it easier to start/top/view a device when running `manage_devices.sh`
+
+We use the `install_devices.sh` script for this.
+
+### **Adding Devices**
 
 ```sh
 bash install_devices.sh
@@ -63,10 +68,8 @@ bash install_devices.sh
 
 1. Select **"Add devices to startup"** from the menu.
 2. Choose the devices from the numbered list.
-3. Confirm the selection, and the script will update the startup configuration.
-4. Devices will now automatically start on reboot and be monitored by `cron` every 5 mins to check for crash.
 
-### **Removing Devices from Startup**
+### **Removing Devices**
 
 To remove a device from automatic startup:
 
@@ -75,13 +78,11 @@ bash install_devices.sh
 ```
 
 1. Select **"Remove devices from startup"** from the menu.
-2. Choose the devices you wish to remove.
-3. Confirm the selection, and the script will update the startup configuration.
-4. Removed devices will no longer start automatically but can be run manually.
+2. Choose the devices you wish to remove from the numbered list.
 
 ## 📟 Manage Devices
 
-Once the installation is complete, you can use the `manage_devices.sh` script to interact with the running devices.
+Once device installation is complete, you can use the `manage_devices.sh` script to start/stop/view devices.
 
 ### **Viewing Device Output**
 
@@ -95,6 +96,18 @@ bash manage_devices.sh
 2. Choose the device from the numbered list.
 3. The terminal will attach to the device’s `tmux` session, showing live output.
 4. To **detach** (without stopping the device), press `Ctrl+B`, then `D` (or type `tmux detach` and enter).
+
+### **Starting a Device**
+
+To start a device:
+
+```sh
+bash manage_devices.sh
+```
+
+1. Select **"Start a device"** from the menu.
+2. Choose the devices from the numbered list.
+3. The device will be started as a background process using the command installed in `start-devices.sh`
 
 ### **Stopping a Running Device**
 
