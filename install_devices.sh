@@ -19,7 +19,7 @@ list_installed_devices() {
 update_startup_script() {
     echo "🛠 Updating startup script..."
     echo "#!/bin/bash" > "$STARTUP_SCRIPT"
-    for device in "${SELECTED_deviceS[@]}"; do
+    for device in "${SELECTED_DEVICES[@]}"; do
         SESSION_NAME="${device%.py}"
         echo "tmux has-session -t $SESSION_NAME 2>/dev/null || tmux new-session -d -s $SESSION_NAME 'python $SCRIPT_DIR/$device'" >> "$STARTUP_SCRIPT"
     done
@@ -47,21 +47,21 @@ if [[ "$MODE" == "1" ]]; then
 
     # Get user selection
     read -p "Enter the numbers of the scripts to install (comma-separated): " INPUT
-    SELECTED_deviceS=()
+    SELECTED_DEVICES=()
     for num in $(echo $INPUT | tr "," " "); do
         if [[ $num =~ ^[0-9]+$ ]] && (( num >= 1 && num <= ${#device_SCRIPTS[@]} )); then
-            SELECTED_deviceS+=("${device_SCRIPTS[$((num-1))]}")
+            SELECTED_DEVICES+=("${device_SCRIPTS[$((num-1))]}")
         fi
     done
 
-    if [ ${#SELECTED_deviceS[@]} -eq 0 ]; then
+    if [ ${#SELECTED_DEVICES[@]} -eq 0 ]; then
         echo "❌ No valid selections made. Exiting."
         exit 1
     fi
 
     # Confirm selection
     echo -e "\n✔️ Selected devices for startup:"
-    for device in "${SELECTED_deviceS[@]}"; do
+    for device in "${SELECTED_DEVICES[@]}"; do
         echo "✅ $device"
     done
 
@@ -98,31 +98,31 @@ elif [[ "$MODE" == "2" ]]; then
     done
 
     read -p "Enter the numbers of the scripts to remove (comma-separated): " REMOVE_INPUT
-    REMOVE_deviceS=()
+    REMOVE_DEVICES=()
     for num in $(echo $REMOVE_INPUT | tr "," " "); do
         if [[ $num =~ ^[0-9]+$ ]] && (( num >= 1 && num <= ${#INSTALLED_DEVICES[@]} )); then
-            REMOVE_deviceS+=("${INSTALLED_DEVICES[$((num-1))]}")
+            REMOVE_DEVICES+=("${INSTALLED_DEVICES[$((num-1))]}")
         fi
     done
 
-    if [ ${#REMOVE_deviceS[@]} -eq 0 ]; then
+    if [ ${#REMOVE_DEVICES[@]} -eq 0 ]; then
         echo "❌ No valid selections made. Exiting."
         exit 1
     fi
 
     # Remove selected devices
     echo -e "\n🚀 Removing selected devices from startup..."
-    SELECTED_deviceS=()
+    SELECTED_DEVICES=()
     for device in "${INSTALLED_DEVICES[@]}"; do
-        if [[ ! " ${REMOVE_deviceS[@]} " =~ " ${device} " ]]; then
-            SELECTED_deviceS+=("$device")
+        if [[ ! " ${REMOVE_DEVICES[@]} " =~ " ${device} " ]]; then
+            SELECTED_DEVICES+=("$device")
         fi
     done
 
     update_startup_script
 
     # If no devices are left, remove the cron jobs
-    if [ ${#SELECTED_deviceS[@]} -eq 0 ]; then
+    if [ ${#SELECTED_DEVICES[@]} -eq 0 ]; then
         echo "🛑 No devices left. Removing cron jobs..."
         (crontab -l 2>/dev/null | grep -v "$STARTUP_SCRIPT") | crontab -
         rm -f "$STARTUP_SCRIPT"
