@@ -89,19 +89,19 @@ elif [[ "$MODE" == "2" ]]; then
     fi
 
     # Extract installed devices
-    INSTALLED_deviceS=($(grep "tmux new-session" "$STARTUP_SCRIPT" | awk -F "'" '{print $2}'))
+    INSTALLED_DEVICES=($(grep "tmux new-session" "$STARTUP_SCRIPT" | awk -F "'" '{print $2}'))
 
     # Ask which ones to remove
     echo -e "\n🗑️  Select devices to REMOVE from startup:"
-    for i in "${!INSTALLED_deviceS[@]}"; do
-        echo "$((i+1)). ${INSTALLED_deviceS[$i]}"
+    for i in "${!INSTALLED_DEVICES[@]}"; do
+        echo "$((i+1)). ${INSTALLED_DEVICES[$i]}"
     done
 
     read -p "Enter the numbers of the scripts to remove (comma-separated): " REMOVE_INPUT
     REMOVE_deviceS=()
     for num in $(echo $REMOVE_INPUT | tr "," " "); do
-        if [[ $num =~ ^[0-9]+$ ]] && (( num >= 1 && num <= ${#INSTALLED_deviceS[@]} )); then
-            REMOVE_deviceS+=("${INSTALLED_deviceS[$((num-1))]}")
+        if [[ $num =~ ^[0-9]+$ ]] && (( num >= 1 && num <= ${#INSTALLED_DEVICES[@]} )); then
+            REMOVE_deviceS+=("${INSTALLED_DEVICES[$((num-1))]}")
         fi
     done
 
@@ -113,7 +113,7 @@ elif [[ "$MODE" == "2" ]]; then
     # Remove selected devices
     echo -e "\n🚀 Removing selected devices from startup..."
     SELECTED_deviceS=()
-    for device in "${INSTALLED_deviceS[@]}"; do
+    for device in "${INSTALLED_DEVICES[@]}"; do
         if [[ ! " ${REMOVE_deviceS[@]} " =~ " ${device} " ]]; then
             SELECTED_deviceS+=("$device")
         fi
