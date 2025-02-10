@@ -24,17 +24,33 @@ list_installed_devices() {
         echo "✅ $device"
     done
 }
-
 # Function to update the startup script
 update_startup_script() {
     echo "🛠  Updating startup script..."
+
+    # Read currently installed devices
+    CURRENT_DEVICES=()
+    if [ -f "$STARTUP_SCRIPT" ]; then
+        CURRENT_DEVICES=($(grep "tmux new-session" "$STARTUP_SCRIPT" | awk -F "'" '{print $2}' | awk '{print $NF}' | xargs -n 1 basename))
+    fi
+
+
+    # Merge existing devices with newly selected devices
+    NEW_DEVICES=("${CURRENT_DEVICES[@]}" "${SELECTED_DEVICES[@]}")
+    
+    # Remove duplicates
+    UNIQUE_DEVICES=($(echo "${NEW_DEVICES[@]}" | tr ' ' '\n' | sort -u | tr '\n' ' '))
+
+    # Recreate the startup script with all devices
     echo "#!/bin/bash" > "$STARTUP_SCRIPT"
-    for device in "${SELECTED_DEVICES[@]}"; do
+    for device in "${UNIQUE_DEVICES[@]}"; do
         SESSION_NAME="${device%.py}"
         echo "tmux has-session -t $SESSION_NAME 2>/dev/null || tmux new-session -d -s $SESSION_NAME 'python $SCRIPT_DIR/$device'" >> "$STARTUP_SCRIPT"
     done
+
     chmod +x "$STARTUP_SCRIPT"
 }
+
 
 # Ask the user whether to add or remove devices
 echo -e "\n🔧 Would you like to: \n1️⃣  Add devices to startup \n2️⃣  Remove devices from startup"
