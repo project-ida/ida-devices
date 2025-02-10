@@ -6,7 +6,7 @@ STARTUP_SCRIPT="$SCRIPT_DIR/start-devices.sh"
 echo -e "\n🔧 What would you like to do?"
 echo "1️⃣  View a device's output"
 echo "2️⃣  Start a device"
-echo "3️⃣  Stop a device"
+echo "3️⃣  Stop devices"
 
 # Use `read -e` to enable arrow keys & line editing
 read -e -p "Enter 1, 2, or 3: " MODE
@@ -32,18 +32,24 @@ if [[ "$MODE" == "1" || "$MODE" == "3" ]]; then
     done
 
     # Enable arrow key navigation when selecting a device
-    read -e -p "Enter the number of the device to select: " DEVICE_NUM
+    read -e -p "Enter the numbers of the devices to select (comma-separated): " DEVICE_INPUT
 
-    if [[ "$DEVICE_NUM" =~ ^[0-9]+$ ]] && (( DEVICE_NUM >= 1 && DEVICE_NUM <= ${#RUNNING_DEVICES[@]} )); then
-        DEVICE_NAME="${RUNNING_DEVICES[$((DEVICE_NUM-1))]}"
-    else
-        echo "❌ Invalid selection."
+    # Process multiple device selections
+    SELECTED_DEVICES=()
+    for num in $(echo "$DEVICE_INPUT" | tr "," " "); do
+        if [[ "$num" =~ ^[0-9]+$ ]] && (( num >= 1 && num <= ${#RUNNING_DEVICES[@]} )); then
+            SELECTED_DEVICES+=("${RUNNING_DEVICES[$((num-1))]}")
+        fi
+    done
+
+    if [ ${#SELECTED_DEVICES[@]} -eq 0 ]; then
+        echo "❌ No valid selections made. Exiting."
         exit 1
     fi
 fi
 
 if [[ "$MODE" == "1" ]]; then
-    tmux attach -t "$DEVICE_NAME"
+    tmux attach -t "${SELECTED_DEVICES[0]}"  # Only allow selecting one for viewing
 
 elif [[ "$MODE" == "2" ]]; then
     if [ ${#INSTALLED_DEVICES[@]} -eq 0 ]; then
@@ -85,7 +91,12 @@ elif [[ "$MODE" == "2" ]]; then
     done
 
 elif [[ "$MODE" == "3" ]]; then
-    echo "🛑 Stopping $DEVICE_NAME..."
-    tmux kill-session -t "$DEVICE_NAME"
-    echo "✅ $DEVICE_NAME has been stopped."
+    echo -e "\n🛑 Stopping selected devices..."
+
+    # Stop each selected device
+    for DEVICE_NAME in "${SELECTED_DEVICES[@]}"; do
+        echo "🛑 Stopping $DEVICE_NAME..."
+        tmux kill-session -t "$DEVICE_NAME"
+        echo "✅ $DEVICE_NAME has been stopped."
+    done
 fi
