@@ -12,6 +12,15 @@ import logging
 from collections import namedtuple
 from daqhats import mcc128, OptionFlags, HatIDs, HatError, AnalogInputMode, \
     AnalogInputRange
+import sys
+import os
+
+# Add the parent directory (../) to the Python path
+parent_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+sys.path.append(parent_dir)
+
+# Add the helper library path
+sys.path.append(os.path.expanduser("~/daqhats/examples/python/mcc134"))
 from daqhats_utils import select_hat_device, chan_list_to_mask
 
 READ_ALL_AVAILABLE = -1
