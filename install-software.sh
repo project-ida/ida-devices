@@ -34,7 +34,7 @@ echo "⚙️ Compiling and installing libuldaq..."
 cd libuldaq-1.2.1 || { echo "❌ Failed to enter libuldaq directory. Check: https://github.com/mccdaq/uldaq"; exit 1; }
 
 if ! ./configure && make; then
-    echo "❌ Build failed for libuldaq. Check: https://github.com/mccdaq/uldaq"
+    echo "❌ Build failed for libuldaq. Check: https://github.com/mccdaq/uldaq/issues"
     exit 1
 fi
 
@@ -42,6 +42,10 @@ if ! sudo make install; then
     echo "❌ Installation failed for libuldaq. Check: https://github.com/mccdaq/uldaq"
     exit 1
 fi
+
+echo "🧹 Cleaning up..."
+cd "$HOME"
+rm -rf libuldaq-1.2.1 libuldaq-1.2.1.tar.bz2
 
 echo "📥 Cloning daqhats repository..."
 if ! git clone https://github.com/mccdaq/daqhats.git; then
@@ -54,6 +58,13 @@ cd "$HOME/daqhats" || { echo "❌ Failed to enter daqhats directory. Check: http
 
 if ! sudo ./install.sh; then
     echo "❌ Failed to install daqhats. Check: https://github.com/mccdaq/daqhats/issues"
+    exit 1
+fi
+
+# Install libpq-dev (PostgreSQL development libraries)
+echo "🔧 Installing libpq-dev (PostgreSQL development libraries)..."
+if ! sudo apt-get install -y libpq-dev; then
+    echo "❌ Failed to install libpq-dev. Check your package manager or visit https://www.postgresql.org"
     exit 1
 fi
 
