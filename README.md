@@ -26,7 +26,7 @@ Copied from [daqhats](https://github.com/mccdaq/daqhats):
 
    inside the `ida-devices` directory.
 
-3. Copy `psql_credentials_cloud` into the `ida-devices` directory.
+3. Copy `psql_credentials` into the `ida-devices` directory.
 
 ## 🔧 Installing Devices
 

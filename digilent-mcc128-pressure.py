@@ -40,7 +40,7 @@ def init_db():
     Initialize and return the database connection and cursor.
     """
     from mitcf import pglogger
-    import psql_credentials_cloud as creds_cloud
+    import psql_credentials as creds_cloud
     try:
         db_cloud = pglogger(creds_cloud)
         logging.info("Database connection initialized.")
