@@ -26,7 +26,13 @@ Copied from [daqhats](https://github.com/mccdaq/daqhats):
 
    inside the `ida-devices` directory.
 
-3. Copy `psql_credentials` into the `ida-devices` directory.
+3. Allow all USB ports to be accesed by the current user by running
+
+   ```sh
+   bash allow-usb.sh
+   ```
+
+5. Copy `psql_credentials` into the `ida-devices` directory.
 
 ## 🧑‍💻 Running software
 
