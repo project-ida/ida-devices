@@ -34,7 +34,7 @@ echo "⚙️ Compiling and installing libuldaq..."
 cd libuldaq-1.2.1 || { echo "❌ Failed to enter libuldaq directory. Check: https://github.com/mccdaq/uldaq"; exit 1; }
 
 if ! ./configure && make; then
-    echo "❌ Build failed for libuldaq. Check: https://github.com/mccdaq/uldaq/issues"
+    echo "❌ Build failed for libuldaq. Check: https://github.com/mccdaq/uldaq"
     exit 1
 fi
 
