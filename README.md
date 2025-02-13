@@ -2,6 +2,12 @@
 
 This project provides diagnostics for various sensors on Raspberry Pi and Ubuntu systems.
 
+❗️BEFORE YOU BEGIN INSTALLING ANYTHING FROM THIS REPO YOU NEED TO SORT OUT THE DAQ HAT HARDWARE❗️
+
+Copied from [daqhats](https://github.com/mccdaq/daqhats):
+
+> Power off the Raspberry Pi and attach one or more DAQ HAT boards, using unique address settings for each. Refer to [Installing the HAT board](https://mccdaq.github.io/daqhats/hardware.html) for detailed information. When using a single board, leave it at address 0 (all address jumpers removed.) One board must always be at address 0 to ensure that the OS reads a HAT EEPROM and initializes the hardware correctly.
+
 ## 🚀 Installing software
 
 1. Clone the repository
