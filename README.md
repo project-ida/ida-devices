@@ -28,6 +28,16 @@ Copied from [daqhats](https://github.com/mccdaq/daqhats):
 
 3. Copy `psql_credentials` into the `ida-devices` directory.
 
+## 🧑‍💻 Running software
+
+If you don't want to have scripts automatically re-start if a crash happens, then you are free to simply open a terminal and run
+
+```sh
+python whatever.py
+```
+
+If, however, you want something a bit more resilient, then you'll need to read onto the "Installing Devices" section.
+
 ## 🔧 Installing Devices
 
 "Installing" a device means:
