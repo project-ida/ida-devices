@@ -12,9 +12,10 @@ This project provides diagnostics for various sensors on Raspberry Pi and Ubuntu
 
    in the home directory (usually the directory that the terminal starts in - denoted by `~`).
 
-2. Install data acquisition drivers ([uldaq](https://github.com/mccdaq/uldaq), [daqhats](https://github.com/mccdaq/daqhats)) and python software libraries - 
+2. Install data acquisition drivers ([uldaq](https://github.com/mccdaq/uldaq), [daqhats](https://github.com/mccdaq/daqhats)) and python software libraries -
+
    ```sh
-  bash install_software.sh
+   bash install_software.sh
    ```
 
 3. Copy `psql_credentials_cloud` into the `ida-devices` directory.
