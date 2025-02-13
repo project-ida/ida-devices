@@ -32,6 +32,8 @@ Copied from [daqhats](https://github.com/mccdaq/daqhats):
    bash allow-usb.sh
    ```
 
+   inside the `ida-devices` directory.
+
 5. Copy `psql_credentials` into the `ida-devices` directory.
 
 ## 🧑‍💻 Running software
