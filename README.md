@@ -15,7 +15,7 @@ This project provides diagnostics for various sensors on Raspberry Pi and Ubuntu
 2. Install data acquisition drivers ([uldaq](https://github.com/mccdaq/uldaq), [daqhats](https://github.com/mccdaq/daqhats)) and python software libraries
 
    ```sh
-   bash install_software.sh
+   bash install-software.sh
    ```
 
 3. Copy `psql_credentials_cloud` into the `ida-devices` directory.
@@ -27,7 +27,7 @@ This project provides diagnostics for various sensors on Raspberry Pi and Ubuntu
 - Allowing it to run at startup and re-run if it crashes (via cron)
 - Making it easier to start/top/view a device when running `manage-devices.sh`
 
-We use the `install_devices.sh` script for this.
+We use the `install-devices.sh` script for this.
 
 ### **Adding Devices**
 
