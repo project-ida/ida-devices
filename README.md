@@ -4,8 +4,6 @@ This project provides diagnostics for various sensors on Raspberry Pi and Ubuntu
 
 ## 🚀 Installing code
 
-### **Option 1: System-Wide Installation (Recommended)**
-
 This installs everything globally for seamless usage.
 
 1. Clone the repository -
@@ -19,33 +17,6 @@ This installs everything globally for seamless usage.
 2. Copy `psql_credentials_cloud` into the `ida-devices` directory.
 
 3. Install Python libraries not included in the standard Python distribution -
-   ```sh
-   pip install .
-   ```
-   inside the `ida-devices` directory.
-
-### **Option 2: Using a Virtual Environment (Optional)**
-
-If you prefer to keep dependencies isolated, you can use a virtual environment:
-
-1. Clone the repository -
-
-   ```sh
-   git clone https://github.com/project-ida/ida-devices.git
-   ```
-
-   in the home directory (usually the directory that the terminal starts in - denoted by `~`).
-
-2. Copy `psql_credentials_cloud` into the `ida-devices` directory.
-
-3. Create and activate a virtual environment inside the `ida-devices` directory:
-
-   ```sh
-   python -m venv venv
-   source venv/bin/activate  # need to run this for every new terminal
-   ```
-
-4. Install Python libraries not included in the standard Python distribution -
    ```sh
    pip install .
    ```
