@@ -27,7 +27,7 @@ def init_db():
     """
     Initialize and return the database connection.
     """
-    from mitcf import pglogger
+    from ida_db import pglogger
     import psql_credentials as creds_cloud
     try:
         db_cloud = pglogger(creds_cloud)
