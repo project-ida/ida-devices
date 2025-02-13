@@ -131,7 +131,7 @@ This will list all active `tmux` sessions, which correspond to running devices.
 If you want to manually start a device without adding it to startup:
 
 ```sh
-tmux new-session -d -s <device-name> "python /path/to/device-script.py"
+tmux new-session -d -s <device-name> "python /path/to/device-script.py; echo Press Enter to exit...; read"
 ```
 
 This will run the selected device in the background using `tmux`.
