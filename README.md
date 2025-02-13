@@ -2,7 +2,7 @@
 
 This project provides diagnostics for various sensors on Raspberry Pi and Ubuntu systems.
 
-## 🚀 Installing code
+## 🚀 Installing software
 
 1. Clone the repository
 
