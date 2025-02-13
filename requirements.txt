@@ -1,5 +1,5 @@
 numpy
 daqhats
-ida_db
+ida-db
 pyserial
 uldaq
