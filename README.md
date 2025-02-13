@@ -16,7 +16,7 @@ Copied from [daqhats](https://github.com/mccdaq/daqhats):
    git clone https://github.com/project-ida/ida-devices.git
    ```
 
-   in the home directory (usually the directory that the terminal starts in - denoted by `~`).
+   in the home directory (usually the directory that the terminal starts in - to get there type `cd ~`).
 
 2. Install data acquisition drivers ([uldaq](https://github.com/mccdaq/uldaq), [daqhats](https://github.com/mccdaq/daqhats)) and python software libraries by running
 
