@@ -13,6 +13,9 @@ import sys
 parent_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 sys.path.append(parent_dir)
 
+# Set to track processed files
+processed_files = set()
+
 def init_db():
     """
     Initialize and return a PostgreSQL database connection.
@@ -24,7 +27,7 @@ def init_db():
         logging.info("Database connection initialized.")
         return db_cloud
     except Exception as e:
-        logging.error(f"Failed to initialize database connection: {e}")
+        logging.error("Failed to initialize database connection: {}".format(e))
         return None
 
 def reconnect_db():
@@ -35,17 +38,19 @@ def reconnect_db():
     try:
         return init_db()
     except Exception as e:
-        logging.error(f"Reconnection failed: {e}")
+        logging.error("Reconnection failed: {}".format(e))
         return None
 
 def process_file(filepath, table_name, db_cloud):
     """
     Process new or modified .mca files and insert data into the PostgreSQL database.
     """
-    global lastfilename
-    if os.path.basename(filepath) == os.path.basename(lastfilename):
+    filename = os.path.basename(filepath)
+    
+    if filename in processed_files:
+        logging.info(f"Skipping already processed file: {filename}")
         return  # Prevent duplicate processing
-
+    
     logging.info(f"Processing new .mca file: {filepath}")
     time.sleep(1)  # Allow file to fully write
 
@@ -53,22 +58,44 @@ def process_file(filepath, table_name, db_cloud):
         with open(filepath, 'r') as file:
             data = file.readlines()
 
-        extracted_data = [float(line.strip()) for line in data if line.strip().isdigit()]
-        logging.info(f"Extracted {len(extracted_data)} values from {filepath}.")
+        # Extract START_TIME
+        start_time = None
+        extracted_data = []
+        
+        for line in data:
+            line = line.strip()
+            
+            if line.startswith("START_TIME -"):
+                start_time_str = line.split(" - ")[1]
+                start_time = pd.to_datetime(start_time_str, format="%m/%d/%Y %H:%M:%S").strftime('%Y-%m-%d %H:%M:%S')
+            
+            elif line.isdigit():  # Ensure it’s an integer value
+                extracted_data.append(int(line))  # Convert to integer
+        
+        if start_time is None:
+            logging.warning(f"No START_TIME found in {filepath}, skipping file.")
+            return
+        
+        if not extracted_data:
+            logging.warning(f"No valid data found in {filepath}, skipping file.")
+            return
 
-        # Log data to the database
+        logging.info(f"Extracted {len(extracted_data)} integer values from {filepath} with START_TIME: {start_time}")
+
+        # Convert list to a PostgreSQL-compatible array format (WITHOUT {})
+        channels_str = ",".join(map(str, extracted_data))  # Convert integers to comma-separated string
+
+        # Log data to the database using correct format
         if db_cloud:
-            for value in extracted_data:
-                success = db_cloud.log(table=table_name, channels=np.array([value]))
-                if not success:
-                    logging.warning(f"Failed to log value {value} from {filepath}")
-                    db_cloud = reconnect_db()
+            success = db_cloud.log(table_name, channels_str, start_time)  # Pass the string without extra {}
+            if not success:
+                logging.warning(f"Failed to log data from {filepath}")
+                db_cloud = reconnect_db()
         else:
             logging.error("Database connection lost. Reconnecting...")
 
         logging.info(f"Data from {filepath} inserted into database.")
-        global lastfilename
-        lastfilename = filepath
+        processed_files.add(filename)  # Add processed file to the set
 
     except Exception as e:
         logging.error(f"Error processing {filepath}: {e}")
