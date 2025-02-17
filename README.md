@@ -2,7 +2,9 @@
 
 This project provides diagnostics for various sensors on Raspberry Pi and Ubuntu systems.
 
-❗️BEFORE YOU BEGIN INSTALLING ANYTHING FROM THIS REPO YOU NEED TO SORT OUT THE DAQ HAT HARDWARE❗️
+❗️FOR RASPBERRY PI USING DAQ HAT HARDWARE❗️
+
+You'll need to set up the hardware before installing anything from this library.
 
 Copied from [daqhats](https://github.com/mccdaq/daqhats):
 
@@ -18,15 +20,23 @@ Copied from [daqhats](https://github.com/mccdaq/daqhats):
 
    in the home directory (usually the directory that the terminal starts in - to get there type `cd ~`).
 
-2. Install data acquisition drivers ([uldaq](https://github.com/mccdaq/uldaq), [daqhats](https://github.com/mccdaq/daqhats)) and python software libraries by running
+2. For Raspberry Pi with daqhat hardware, install data acquisition drivers from digilent ([uldaq](https://github.com/mccdaq/uldaq), [daqhats](https://github.com/mccdaq/daqhats)) by running
 
    ```sh
-   bash install-software.sh
+   bash install-digilent-software.sh
    ```
 
    inside the `ida-devices` directory.
 
-3. Allow all USB ports to be accesed by the current user by running
+2. Install python software libraries by running
+
+   ```sh
+   bash install-python-libraries.sh
+   ```
+
+   inside the `ida-devices` directory.
+
+3. Allow all USB ports to be accessed by the current user by running
 
    ```sh
    bash allow-usb.sh
