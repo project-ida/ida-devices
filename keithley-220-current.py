@@ -8,7 +8,7 @@ import datetime
 import serial
 import powersupply_current
 from mitcf import pglogger
-import psql_credentials_cloud as creds_cloud
+import psql_credentials as creds_cloud
 
 # Initialize database logger
 db_cloud = pglogger(creds_cloud)
