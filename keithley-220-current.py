@@ -7,7 +7,7 @@ import threading
 import datetime
 import serial
 import powersupply_current
-from mitcf import pglogger
+from ida_db import pglogger
 import psql_credentials as creds_cloud
 
 # Initialize database logger
