@@ -1,4 +1,4 @@
-from util import Serial
+from libs.util import Serial
 from socket import socket, AF_INET, SOCK_STREAM, IPPROTO_TCP
 from time import sleep
 

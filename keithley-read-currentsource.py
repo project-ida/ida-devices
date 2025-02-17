@@ -10,7 +10,7 @@ import sys
 import os
 import threading
 from collections import namedtuple
-from gpib_power_supply import GPIBPowerSupply  # Use GPIB power supply instead of KoradSerial
+from libs.gpib_power_supply import GPIBPowerSupply  # Use GPIB power supply instead of KoradSerial
 
 # Add the parent directory (../) to the Python path
 parent_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))

@@ -1,4 +1,4 @@
-import prologix
+import libs.prologix as prologix
 import serial
 import time
 import math

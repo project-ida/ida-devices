@@ -2,7 +2,7 @@ from PyQt5.QtCore import QTimer
 import numpy as np
 import socket
 import argparse
-from fmsignal import fmsignal
+from libs.fmsignal import fmsignal
 import requests
 import matplotlib
 matplotlib.use('QtAgg')  # Requires PyQt5

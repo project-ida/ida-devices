@@ -10,7 +10,7 @@ import sys
 import os
 import threading
 from collections import namedtuple
-from koradserial import KoradSerial
+from libs.koradserial import KoradSerial
 
 # Add the parent directory (../) to the Python path
 parent_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))

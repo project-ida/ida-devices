@@ -9,7 +9,7 @@ import sys
 import os
 from serial import SerialException
 from collections import namedtuple
-from ut61e import UT61E
+from libs.ut61e import UT61E
 
 # Add the parent directory (../) to the Python path
 parent_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))

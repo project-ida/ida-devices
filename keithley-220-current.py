@@ -6,7 +6,7 @@ import time
 import threading
 import datetime
 import serial
-import powersupply_current
+import libs.powersupply_current as powersupply_current
 from ida_db import pglogger
 import psql_credentials as creds_cloud
 
