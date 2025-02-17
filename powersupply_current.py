@@ -1,4 +1,4 @@
-from wanglib import prologix
+import prologix
 import serial
 import time
 import math
