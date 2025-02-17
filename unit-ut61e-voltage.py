@@ -2,6 +2,7 @@ import pandas as pd
 import numpy as np
 import logging
 import argparse
+import csv
 import time
 import datetime
 import sys
@@ -39,14 +40,18 @@ def setup_csv():
     """
     Setup and return a CSV writer and its associated file handle in a named tuple.
     """
-    CsvHandle = namedtuple('CsvHandle', ['writer', 'file'])
+    CsvHandle = namedtuple('CsvHandle', ['writer', 'file', 'filename'])
     start_time = datetime.datetime.now()
     timestamp = start_time.strftime("%Y%m%d_%H%M%S")
     filename = f"{timestamp}_multimeter_data.csv"
+    
     csv_file = open(filename, 'w', newline='')
-    csv_writer = pd.DataFrame(columns=["Timestamp", "Value"])
+    csv_writer = csv.writer(csv_file)
+    csv_writer.writerow(["Timestamp", "Value"])  # Write header
+
     logging.info(f"CSV logging started. File: {filename}")
     return CsvHandle(writer=csv_writer, file=csv_file, filename=filename)
+
 
 def read_multimeter(dmm):
     """
@@ -106,9 +111,8 @@ def main():
             logging.info(f"Logging Value: {value}")
 
             # Write to CSV
-            new_entry = pd.DataFrame([[timestamp, value]], columns=["Timestamp", "Value"])
-            csv_handle.writer = pd.concat([csv_handle.writer, new_entry], ignore_index=True)
-            csv_handle.writer.to_csv(csv_handle.filename, index=False)
+            csv_handle.writer.writerow([timestamp, value])  # Append the new row
+            csv_handle.file.flush()  # Flush to ensure data is saved immediately
 
             # Log data to the database
             success_cloud = db_cloud.log(table=args.table, channels=np.array([value]))
