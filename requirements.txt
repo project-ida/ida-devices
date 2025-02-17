@@ -1,5 +1,11 @@
-numpy
-daqhats
 ida-db
-pyserial
+numpy
+pandas
+matplotlib
+daqhats
 uldaq
+pyserial
+watchdog
+requests
+psycopg2
+PyQt5
