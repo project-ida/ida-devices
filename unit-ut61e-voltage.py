@@ -60,18 +60,19 @@ def read_multimeter(dmm):
     try:
         response = dmm.get_readable(disp_norm_val=True)
         logging.info(f"Read data: {response}")
+        print(f"Read data: {response}")
 
-        response_tail = response[-11:-2]
-        response_final = response_tail.split("=")
+        # Extract the part after '=' dynamically
+        match = re.search(r"=\s*([\d.]+)\s*V", response)
         
-        try:
-            value_str = response_final[1]
-        except IndexError:
+        if match:
+            value_str = match.group(1)  # Extract matched voltage value
+        else:
             logging.warning("Could not extract value, using first element.")
-            value_str = response_final[0]
+            value_str = response.split()[-1]  # Try last element as fallback
 
         value_str_clean = value_str.replace(" ", "")
-        value = float(value_str_clean)
+        value = float(value_str_clean)*1000
         logging.info(f"Extracted value: {value}")
         return value
 
