@@ -1,4 +1,4 @@
-from wanglib.util import Serial
+from util import Serial
 from socket import socket, AF_INET, SOCK_STREAM, IPPROTO_TCP
 from time import sleep
 
