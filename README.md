@@ -23,7 +23,7 @@ Copied from [daqhats](https://github.com/mccdaq/daqhats):
 2. For Raspberry Pi with daqhat hardware, install data acquisition drivers from digilent ([uldaq](https://github.com/mccdaq/uldaq), [daqhats](https://github.com/mccdaq/daqhats)) by running
 
    ```sh
-   bash install-digilent-software.sh
+   bash scripts/install-digilent-software.sh
    ```
 
    inside the `ida-devices` directory.
@@ -31,7 +31,7 @@ Copied from [daqhats](https://github.com/mccdaq/daqhats):
 2. Install python software libraries by running
 
    ```sh
-   bash install-python-libraries.sh
+   bash scripts/install-python-libraries.sh
    ```
 
    inside the `ida-devices` directory.
@@ -39,7 +39,7 @@ Copied from [daqhats](https://github.com/mccdaq/daqhats):
 3. Allow all USB ports to be accessed by the current user by running
 
    ```sh
-   bash allow-usb.sh
+   bash scripts/allow-usb.sh
    ```
 
    inside the `ida-devices` directory.
@@ -68,7 +68,7 @@ We use the `install-devices.sh` script for this.
 ### **Adding Devices**
 
 ```sh
-bash install-devices.sh
+bash scripts/install-devices.sh
 ```
 
 1. Select **"Add devices to startup"** from the menu.
@@ -77,7 +77,7 @@ bash install-devices.sh
 ### **Removing Devices**
 
 ```sh
-bash install-devices.sh
+bash scripts/install-devices.sh
 ```
 
 1. Select **"Remove devices from startup"** from the menu.
@@ -92,7 +92,7 @@ Once device installation is complete, you can use the `manage-devices.sh` script
 To view the real-time output of a running device, run:
 
 ```sh
-bash manage-devices.sh
+bash scripts/manage-devices.sh
 ```
 
 1. Select **"View a device's output"** from the menu.
@@ -105,19 +105,19 @@ bash manage-devices.sh
 To start a device:
 
 ```sh
-bash manage-devices.sh
+bash scripts/manage-devices.sh
 ```
 
 1. Select **"Start a device"** from the menu.
 2. Choose the devices from the numbered list.
-3. The device will be started as a background process using the command installed in `start-devices.sh`
+3. The device will be started as a background process using the command installed in `scripts/start-devices.sh`
 
 ### **Stopping a Running Device**
 
 To stop a device that is currently running:
 
 ```sh
-bash manage-devices.sh
+bash scripts/manage-devices.sh
 ```
 
 1. Select **"Stop a running device"** from the menu.
