@@ -9,3 +9,4 @@ watchdog
 requests
 psycopg2
 PyQt5
+uproot
