@@ -11,10 +11,22 @@ import psycopg2
 import re
 import pandas as pd
 
+# Add the parent directory (../) to the Python path
+parent_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+sys.path.append(parent_dir)
+
+# Parse command-line arguments
+parser = argparse.ArgumentParser(description="Monitor and process ROOT files in a specified directory.")
+parser.add_argument("--source", required=True, help="Path to the directory containing ROOT files")
+args = parser.parse_args()
+
+# Set the data folder from the command-line argument
+data_folder = args.source
+
 # Set PSD thresholds for each channel
 PSD_THRESHOLDS = {
-    '0': 0.24,
-    '1': 0.22,
+    '0': 0.16,
+    '1': 1.0,
     '2': 0.12,
     # Add more channels and their corresponding thresholds as needed
 }
@@ -24,12 +36,8 @@ def fiducial_curve(x, *p):
 
     return p[0] * np.exp(-x / p[1]) + p[2] * x + p[3]
 
-# Specify the directory where your data files are located
-#data_folder = "/home/cf/caen-test1/config5/DAQ/run5_5inch_hv1660c/RAW"  # Adjust as needed
-data_folder = "/home/cf/caen-test1/config5/DAQ/fullrun2/RAW"  # Adjust as needed
-
 # PostgreSQL connection details
-from psql_credentials_cloud import PGHOST, PGPORT, PGDATABASE, PGUSER, PGPASSWORD
+from psql_credentials import PGHOST, PGPORT, PGDATABASE, PGUSER, PGPASSWORD
 
 # Connect to PostgreSQL database
 def connect_to_db():
