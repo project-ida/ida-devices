@@ -1,7 +1,6 @@
 import uproot
 import numpy as np
 import matplotlib.pyplot as plt
-import os
 import time
 import matplotlib.dates as mdates
 from datetime import datetime, timedelta
@@ -10,6 +9,8 @@ from watchdog.events import FileSystemEventHandler
 import psycopg2
 import re
 import pandas as pd
+import sys
+import os
 
 # Add the parent directory (../) to the Python path
 parent_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
