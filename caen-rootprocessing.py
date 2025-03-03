@@ -20,10 +20,12 @@ sys.path.append(parent_dir)
 # Parse command-line arguments
 parser = argparse.ArgumentParser(description="Monitor and process ROOT files in a specified directory.")
 parser.add_argument("--source", required=True, help="Path to the directory containing ROOT files")
+parser.add_argument("--table-prefix", required=True, help="Prefix for database table names")
 args = parser.parse_args()
 
-# Set the data folder from the command-line argument
+# Set the data folder and table prefix from the command-line arguments
 data_folder = args.source
+table_prefix = args.table_prefix  # New CLI parameter
 
 # Set PSD thresholds for each channel
 PSD_THRESHOLDS = {
@@ -122,7 +124,7 @@ def get_table_name_from_filename(file_path, particle_type='neutron', data_type='
     match = re.search(r'CH(\d)', file_path)
     if match:
         channel_number = match.group(1)
-        return f"caen4ch_{particle_type}s_caen{channel_number}_{data_type}"
+        return f"{table_prefix}_{particle_type}s_{table_prefix}{channel_number}_{data_type}"
     else:
         raise ValueError(f"Could not extract channel number from file name: {file_path}")
 
