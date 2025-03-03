@@ -171,15 +171,16 @@ def process_root_file(file_path):
         else:
             print("Warning: Fiducial parameter files not found. Proceeding without fiducial curve filtering.")
 
-        # Check if the channel exists in both files
-        if channel_number_int in fiducial_params_gammas_df["ch"].values and channel_number_int in fiducial_params_neutrons_df["ch"].values:
-            fiducial_params_gammas = fiducial_params_gammas_df[fiducial_params_gammas_df["ch"] == channel_number_int].iloc[:, 1:].values.flatten()
-            fiducial_params_neutrons = fiducial_params_neutrons_df[fiducial_params_neutrons_df["ch"] == channel_number_int].iloc[:, 1:].values.flatten()
-            use_fiducial_curves = True
-        else:
-            fiducial_params_gammas = None
-            fiducial_params_neutrons = None
-            use_fiducial_curves = False        
+        if use_fiducial_curves:  
+            # Check if the channel exists in both files
+            if channel_number_int in fiducial_params_gammas_df["ch"].values and channel_number_int in fiducial_params_neutrons_df["ch"].values:
+                fiducial_params_gammas = fiducial_params_gammas_df[fiducial_params_gammas_df["ch"] == channel_number_int].iloc[:, 1:].values.flatten()
+                fiducial_params_neutrons = fiducial_params_neutrons_df[fiducial_params_neutrons_df["ch"] == channel_number_int].iloc[:, 1:].values.flatten()
+                use_fiducial_curves = True
+            else:
+                fiducial_params_gammas = None
+                fiducial_params_neutrons = None
+                use_fiducial_curves = False        
             
         with uproot.open(file_path) as file:
         
