@@ -1,17 +1,17 @@
-import uproot
+import argparse
+import os
+import sys
+import re
 import numpy as np
-import matplotlib.pyplot as plt
+import uproot
+import psycopg2
+import pandas as pd
 import time
+import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 from datetime import datetime, timedelta
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
-import psycopg2
-import re
-import pandas as pd
-import sys
-import os
-import argparse
 
 # Add the parent directory (../) to the Python path
 parent_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
@@ -27,13 +27,14 @@ args = parser.parse_args()
 data_folder = args.source
 table_prefix = args.table_prefix  # New CLI parameter
 
-# Set PSD thresholds for each channel
-PSD_THRESHOLDS = {
-    '0': 0.16,
-    '1': 1.0,
-    '2': 0.12,
-    # Add more channels and their corresponding thresholds as needed
-}
+# Load PSD and energy thresholds from CSV file
+thresholds_file = os.path.join(os.path.dirname(__file__), "psd-thresholds.csv")
+psd_thresholds_df = pd.read_csv(thresholds_file)
+
+# Convert to dictionary: {channel: (PSD threshold, Energy threshold)}
+PSD_THRESHOLDS = {str(row["ch"]): (row["psd-threshold"], row["energy-threshold"])
+                  for _, row in psd_thresholds_df.iterrows()}
+
 
 def fiducial_curve(x, *p):
     x = x.astype(float)
@@ -76,7 +77,6 @@ def insert_spectrum_to_db(conn, table_name, time_value, energy_spectrum):
         """
         cur.execute(query, (time_value, '{' + energy_spectrum_str + '}'))
     conn.commit()
-
 
 # Function to get the last modified time of the earliest file in the folder
 def get_earliest_file_last_modified_time(folder):
@@ -142,7 +142,8 @@ def process_root_file(file_path):
     # Extract the channel number and get the corresponding PSD threshold
     channel_number = get_channel_number_from_filename(file_path)
     channel_number_int = int(channel_number) 
-    psd_threshold = PSD_THRESHOLDS.get(channel_number, 0.15)  # Default to 0.15 if not specified
+
+    psd_threshold, energy_threshold = PSD_THRESHOLDS.get(channel_number, (0.15, 0.0))
     
     if not is_root_file_ready(file_path):
         #print(f"File {file_path} does not have a valid ROOT structure. Skipping.")
@@ -219,9 +220,11 @@ def process_root_file(file_path):
             min_timetag = min(df["Timestamp"])
             max_timetag = max(df["Timestamp"])
             print(f"current file min timetag: {min_timetag}")
-            print(f"current file max timetag: {max_timetag}")            
+            print(f"current file max timetag: {max_timetag}")   
+            
             start_time = min(df["Timestamp"]) + acquisition_start_timestamp
             end_time = max(df["Timestamp"]) + acquisition_start_timestamp
+            
             # Convert to human-readable datetime
             start_time_human = datetime.fromtimestamp(start_time).strftime('%Y-%m-%d %H:%M:%S')
             end_time_human = datetime.fromtimestamp(end_time).strftime('%Y-%m-%d %H:%M:%S')
@@ -231,7 +234,13 @@ def process_root_file(file_path):
             time_bins = np.arange(start_time, end_time + 1, 1)
             
             gamma_cps, _ = np.histogram(gamma_abs_times, bins=time_bins)
-            neutron_cps, _ = np.histogram(neutron_abs_times, bins=time_bins)
+            
+            neutron_cps_below, _ = np.histogram(
+                neutron_abs_times[dfn["Energy"] < energy_threshold], bins=time_bins
+            )
+            neutron_cps_above, _ = np.histogram(
+                neutron_abs_times[dfn["Energy"] >= energy_threshold], bins=time_bins
+            )
             
             time_axis = [datetime.fromtimestamp(t) for t in (time_bins[:-1] + time_bins[1:]) / 2]
             
@@ -241,7 +250,7 @@ def process_root_file(file_path):
                 time_value = t.strftime('%Y-%m-%d %H:%M:%S')
 
                 # Neutron CPS data
-                neutron_cps_data = [neutron_cps[i]]
+                neutron_cps_data = [neutron_cps_below[i], neutron_cps_above[i]]
                 insert_cps_to_db(conn, table_name_neutron_history, time_value, neutron_cps_data)
 
                 # Gamma CPS data
@@ -264,11 +273,6 @@ def process_root_file(file_path):
     except OSError as e:
         print(f"Failed to process {file_path}: {e}")
         return False
-
-import os
-
-# Dictionary to track processed files
-processed_files = {}
 
 # Monitor folder for modified ROOT files
 class ModifiedFileHandler(FileSystemEventHandler):
@@ -306,7 +310,8 @@ class ModifiedFileHandler(FileSystemEventHandler):
             except Exception as e:
                 print(f"Error processing file {file_path}: {e}")
 
-
+# Dictionary to track processed files
+processed_files = {}
 
 if __name__ == "__main__":
     event_handler = ModifiedFileHandler()
@@ -322,4 +327,3 @@ if __name__ == "__main__":
     except KeyboardInterrupt:
         observer.stop()
     observer.join()
-
