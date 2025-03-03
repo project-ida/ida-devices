@@ -124,7 +124,7 @@ def get_table_name_from_filename(file_path, particle_type='neutron', data_type='
     match = re.search(r'CH(\d)', file_path)
     if match:
         channel_number = match.group(1)
-        return f"{table_prefix}_{particle_type}s_{table_prefix}{channel_number}_{data_type}"
+        return f"{table_prefix}_{particle_type}s_caen{channel_number}_{data_type}"
     else:
         raise ValueError(f"Could not extract channel number from file name: {file_path}")
 
