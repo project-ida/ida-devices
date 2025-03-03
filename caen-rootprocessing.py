@@ -158,10 +158,19 @@ def process_root_file(file_path):
             print(f"Skipping file {file_path} due to missing acquisition start information.")
             return False
             
-        # Load CSV files
-        fiducial_params_gammas_df = pd.read_csv("fiducial_params_gammas.csv")
-        fiducial_params_neutrons_df = pd.read_csv("fiducial_params_neutrons.csv")     
-        
+        # Load fiducial parameter CSVs only when needed
+        fiducial_gammas_file = "fiducial_params_gammas.csv"
+        fiducial_neutrons_file = "fiducial_params_neutrons.csv"
+        use_fiducial_curves = False  # Default behavior
+
+        if os.path.exists(fiducial_gammas_file) and os.path.exists(fiducial_neutrons_file):
+            fiducial_params_gammas_df = pd.read_csv(fiducial_gammas_file)
+            fiducial_params_neutrons_df = pd.read_csv(fiducial_neutrons_file)
+            use_fiducial_curves = True
+            print("Fiducial parameter files loaded successfully.")
+        else:
+            print("Warning: Fiducial parameter files not found. Proceeding without fiducial curve filtering.")
+
         # Check if the channel exists in both files
         if channel_number_int in fiducial_params_gammas_df["ch"].values and channel_number_int in fiducial_params_neutrons_df["ch"].values:
             fiducial_params_gammas = fiducial_params_gammas_df[fiducial_params_gammas_df["ch"] == channel_number_int].iloc[:, 1:].values.flatten()
@@ -234,13 +243,16 @@ def process_root_file(file_path):
             time_bins = np.arange(start_time, end_time + 1, 1)
             
             gamma_cps, _ = np.histogram(gamma_abs_times, bins=time_bins)
-            
-            neutron_cps_below, _ = np.histogram(
-                neutron_abs_times[dfn["Energy"] < energy_threshold], bins=time_bins
-            )
-            neutron_cps_above, _ = np.histogram(
-                neutron_abs_times[dfn["Energy"] >= energy_threshold], bins=time_bins
-            )
+
+            if use_fiducial_curves:
+                neutron_cps, _ = np.histogram(neutron_abs_times, bins=time_bins)
+            else:
+                neutron_cps_below, _ = np.histogram(
+                    neutron_abs_times[dfn["Energy"] < energy_threshold], bins=time_bins
+                )
+                neutron_cps_above, _ = np.histogram(
+                    neutron_abs_times[dfn["Energy"] >= energy_threshold], bins=time_bins
+                )
             
             time_axis = [datetime.fromtimestamp(t) for t in (time_bins[:-1] + time_bins[1:]) / 2]
             
@@ -250,7 +262,10 @@ def process_root_file(file_path):
                 time_value = t.strftime('%Y-%m-%d %H:%M:%S')
 
                 # Neutron CPS data
-                neutron_cps_data = [neutron_cps_below[i], neutron_cps_above[i]]
+                if use_fiducial_curves:
+                    neutron_cps_data = [neutron_cps[i]]
+                else:
+                    neutron_cps_data = [neutron_cps_below[i], neutron_cps_above[i]]
                 insert_cps_to_db(conn, table_name_neutron_history, time_value, neutron_cps_data)
 
                 # Gamma CPS data
