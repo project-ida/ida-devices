@@ -8,6 +8,13 @@ if ! sudo apt-get install -y libpq-dev; then
     exit 1
 fi
 
+# Install Qt5 dependencies (libxcb-xinerama0, libxcb1)
+echo "🔧 Installing Qt5 dependencies (libxcb-xinerama0, libxcb1)..."
+if ! sudo apt-get install -y libxcb-xinerama0 libxcb1; then
+    echo "❌ Failed to install Qt5 dependencies. Check your package manager or visit https://doc.qt.io/qt-5/linux-requirements.html"
+    exit 1
+fi
+
 echo "⚙️ Attempting to configure pip to allow breaking system packages..."
 # Try to set the config, but don't exit on failure
 pip config set global.break-system-packages true 2>/dev/null || true
