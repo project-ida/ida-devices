@@ -143,7 +143,7 @@ def main():
                 for ch, temp in temperature_data.items():
                     if temp < -273 or temp > 2000:
                         logging.warning(f"Channel {ch}: Invalid temperature reading ({temp} °C), replacing with NULL.")
-                        processed_temperatures.append("NULL")  
+                        processed_temperatures.append(None)  # Use None instead of "NULL"
                     else:
                         processed_temperatures.append(f"{temp:.3f}")  
                 
