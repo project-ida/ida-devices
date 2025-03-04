@@ -27,6 +27,10 @@ logging.basicConfig(
 
 TEMPERATURE_CHANNELS = [0, 1, 2, 3, 4, 5]
 
+# Define data directory and row limit
+DATA_DIR = os.path.expanduser("~/data")  
+MAX_ROWS_PER_FILE = 100000  
+
 def init_db():
     """
     Initialize and return the database connection and cursor.
@@ -52,19 +56,25 @@ def reconnect_db():
         logging.error(f"Reconnection failed: {e}")
         return None
 
-def setup_csv(channels):
+def setup_csv(channels, file_index=1):
     """
     Setup and return a CSV writer and its associated file handle in a named tuple.
+    Generates a new file for each batch of MAX_ROWS_PER_FILE rows.
     """
-    CsvHandle = namedtuple('CsvHandle', ['writer', 'file'])
-    start_time = datetime.now()
-    timestamp = start_time.strftime("%Y%m%d_%H%M%S")
-    filename = f"{timestamp}_temperature_data.csv"
+    CsvHandle = namedtuple('CsvHandle', ['writer', 'file', 'row_count', 'file_index'])
+
+    os.makedirs(DATA_DIR, exist_ok=True)  # Ensure the directory exists
+
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    filename = os.path.join(DATA_DIR, f"{timestamp}_temperature_data_{file_index}.csv")
     csv_file = open(filename, 'w', newline='')
     csv_writer = csv.writer(csv_file)
-    csv_writer.writerow(["Timestamp"] + [f"Temp_Ch{i} (°C)" for i in channels])
+
+    # Update column name
+    csv_writer.writerow(["time", "channels"])
+
     logging.info(f"CSV logging started. File: {filename}")
-    return CsvHandle(writer=csv_writer, file=csv_file)
+    return CsvHandle(writer=csv_writer, file=csv_file, row_count=0, file_index=file_index)
 
 def prompt_for_temp_device():
     """
@@ -111,7 +121,8 @@ def main():
     db_cloud = init_db()
 
     # Setup CSV logging
-    csv_handle = setup_csv(TEMPERATURE_CHANNELS)
+    file_index = 1
+    csv_handle = setup_csv(TEMPERATURE_CHANNELS, file_index)
 
     # Prompt user for temperature device or auto-select if only one is available
     usb_temp = prompt_for_temp_device()
@@ -125,24 +136,31 @@ def main():
                 logging.info(f"Temperature Data: {temperature_data}")
 
                 # Get current timestamp
-                timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]
                 
                 # Replace out-of-range values with None (to be stored as NULL in PostgreSQL)
                 processed_temperatures = []
                 for ch, temp in temperature_data.items():
                     if temp < -273 or temp > 2000:
                         logging.warning(f"Channel {ch}: Invalid temperature reading ({temp} °C), replacing with NULL.")
-                        processed_temperatures.append(None)  # <-- Now using None instead of np.nan
+                        processed_temperatures.append("NULL")  
                     else:
-                        processed_temperatures.append(temp)
+                        processed_temperatures.append(f"{temp:.3f}")  
                 
                 # Write data to CSV
                 csv_handle.writer.writerow([timestamp] + processed_temperatures)
                 csv_handle.file.flush()
+                csv_handle = csv_handle._replace(row_count=csv_handle.row_count + 1)                
 
+                if csv_handle.row_count >= MAX_ROWS_PER_FILE:
+                    logging.info(f"Reached {MAX_ROWS_PER_FILE} rows, creating a new file.")
+                    csv_handle.file.close()
+                    file_index += 1
+                    csv_handle = setup_csv(TEMPERATURE_CHANNELS, file_index)
+                
                 # Log data to the database
                 temperature_array = np.array(processed_temperatures, dtype=float)  # Explicit dtype to handle None values
-                success_cloud = db_cloud.log(table=table_name, channels=temperature_array)
+                success_cloud = db_cloud.log(table=table_name, channels=temperature_array, time=timestamp)
                 if not success_cloud:
                     logging.warning(f"Failed to log temperature data to table '{table_name}'.")
                     db_cloud = reconnect_db()
