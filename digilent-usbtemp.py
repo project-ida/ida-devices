@@ -127,13 +127,21 @@ def main():
                 # Get current timestamp
                 timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 
+                # Replace out-of-range values with NaN
+                processed_temperatures = []
+                for ch, temp in temperature_data.items():
+                    if temp < -273 or temp > 2000:
+                        logging.warning(f"Channel {ch}: Invalid temperature reading ({temp} °C), replacing with NaN.")
+                        processed_temperatures.append(np.nan)
+                    else:
+                        processed_temperatures.append(temp)
+                
                 # Write data to CSV
-                temperature_values = list(temperature_data.values())
-                csv_handle.writer.writerow([timestamp] + temperature_values)
+                csv_handle.writer.writerow([timestamp] + processed_temperatures)
                 csv_handle.file.flush()
 
                 # Log data to the database
-                temperature_array = np.array(temperature_values)
+                temperature_array = np.array(processed_temperatures)
                 success_cloud = db_cloud.log(table=table_name, channels=temperature_array)
                 if not success_cloud:
                     logging.warning(f"Failed to log temperature data to table '{table_name}'.")
