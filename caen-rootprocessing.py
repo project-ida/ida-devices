@@ -28,13 +28,29 @@ data_folder = args.source
 table_prefix = args.table_prefix  # New CLI parameter
 
 # Load PSD and energy thresholds from CSV file
-thresholds_file = os.path.join(os.path.dirname(__file__), "psd-thresholds.csv")
-psd_thresholds_df = pd.read_csv(thresholds_file)
+thresholds_file = "psd-thresholds.csv"
 
-# Convert to dictionary: {channel: (PSD threshold, Energy threshold)}
-PSD_THRESHOLDS = {str(row["ch"]): (row["psd-threshold"], row["energy-threshold"])
-                  for _, row in psd_thresholds_df.iterrows()}
+if os.path.exists(thresholds_file):
+    psd_thresholds_df = pd.read_csv(thresholds_file)
 
+    # Convert channel numbers to integers, and thresholds to floats
+    psd_thresholds_df["ch"] = psd_thresholds_df["ch"].astype(int)
+    psd_thresholds_df["psd-threshold"] = psd_thresholds_df["psd-threshold"].astype(float)
+    psd_thresholds_df["energy-threshold"] = psd_thresholds_df["energy-threshold"].astype(float)
+
+    # Convert to dictionary: {channel (int): (PSD threshold, Energy threshold)}
+    PSD_THRESHOLDS = {
+        row["ch"]: (row["psd-threshold"], row["energy-threshold"])
+        for _, row in psd_thresholds_df.iterrows()
+    }
+
+    # Print the extracted values for verification
+    print("Loaded PSD and Energy Thresholds:")
+    for channel, (psd_thresh, energy_thresh) in PSD_THRESHOLDS.items():
+        print(f"Channel {int(channel)}: PSD Threshold = {psd_thresh}, Energy Threshold = {energy_thresh}")
+else:
+    print(f"Warning: PSD thresholds file '{thresholds_file}' not found.")
+    PSD_THRESHOLDS = {}  # Empty dictionary to avoid errors
 
 def fiducial_curve(x, *p):
     x = x.astype(float)
@@ -139,15 +155,22 @@ def get_channel_number_from_filename(file_path):
 # Function to process the ROOT file
 def process_root_file(file_path):
     
-    # Extract the channel number and get the corresponding PSD threshold
-    channel_number = get_channel_number_from_filename(file_path)
-    channel_number_int = int(channel_number) 
-
-    psd_threshold, energy_threshold = PSD_THRESHOLDS.get(channel_number, (0.15, 0.0))
-    
     if not is_root_file_ready(file_path):
         #print(f"File {file_path} does not have a valid ROOT structure. Skipping.")
         return False
+    
+    # Extract the channel number and get the corresponding PSD threshold
+    channel_number = get_channel_number_from_filename(file_path)
+    channel_number_int = int(channel_number) 
+    
+    print(f"Extracted Channel Number: {channel_number_int}")
+
+    if channel_number_int in PSD_THRESHOLDS:
+        psd_threshold, energy_threshold = PSD_THRESHOLDS[channel_number_int]
+        print(f"Using loaded PSD Threshold for channel {channel_number_int}: {psd_threshold}, Energy Threshold: {energy_threshold}")
+    else:
+        psd_threshold, energy_threshold = (0.15, 0.0)
+        print(f"Warning: Channel {channel_number_int} not found in PSD_THRESHOLDS. Using default PSD threshold: {psd_threshold}")    
     
     try:
         print("----------START-------------")
