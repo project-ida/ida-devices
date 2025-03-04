@@ -126,13 +126,13 @@ def main():
 
                 # Get current timestamp
                 timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-
-                # Replace out-of-range values with NaN
+                
+                # Replace out-of-range values with None (to be stored as NULL in PostgreSQL)
                 processed_temperatures = []
                 for ch, temp in temperature_data.items():
                     if temp < -273 or temp > 2000:
-                        logging.warning(f"Channel {ch}: Invalid temperature reading ({temp} °C), replacing with NaN.")
-                        processed_temperatures.append(np.nan)
+                        logging.warning(f"Channel {ch}: Invalid temperature reading ({temp} °C), replacing with NULL.")
+                        processed_temperatures.append(None)  # <-- Now using None instead of np.nan
                     else:
                         processed_temperatures.append(temp)
                 
