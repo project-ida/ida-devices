@@ -148,7 +148,11 @@ def main():
                         processed_temperatures.append(f"{temp:.3f}")  
                 
                 # Write data to CSV
-                csv_handle.writer.writerow([timestamp] + processed_temperatures)
+                # Format the list of temperatures as a PostgreSQL-style array
+                channels_string = "{" + ",".join("NULL" if v is None else str(v) for v in processed_temperatures) + "}"
+                # Write the formatted row to the CSV file
+                csv_handle.writer.writerow([timestamp, channels_string])
+                
                 csv_handle.file.flush()
                 csv_handle = csv_handle._replace(row_count=csv_handle.row_count + 1)                
 
