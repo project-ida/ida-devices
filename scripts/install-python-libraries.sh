@@ -16,9 +16,11 @@ if ! sudo apt-get install -y libxcb-xinerama0 libxcb1; then
 fi
 
 echo "⚙️ Attempting to configure pip to allow breaking system packages..."
-# Try to set the config, but don't exit on failure
-pip config set global.break-system-packages true 2>/dev/null || true
-# If it fails (e.g., option not supported), we proceed anyway
+if pip config set global.break-system-packages true 2>/dev/null; then
+    echo "✅ Pip config set successfully."
+else
+    echo "⚠️ Pip config set failed (possibly old version or permissions), proceeding anyway..."
+fi
 
 echo "🐍 Installing Python dependencies..."
 if ! pip install .; then
