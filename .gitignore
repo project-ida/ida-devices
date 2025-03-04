@@ -172,3 +172,9 @@ cython_debug/
 
 # Files generated after install
 start-devices.sh
+
+# SQL login details
+psql_credentials
+
+# Generated data files
+*.csv
