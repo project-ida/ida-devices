@@ -141,7 +141,7 @@ def main():
                 csv_handle.file.flush()
 
                 # Log data to the database
-                temperature_array = np.array(processed_temperatures)
+                temperature_array = np.array(processed_temperatures, dtype=float)  # Explicit dtype to handle None values
                 success_cloud = db_cloud.log(table=table_name, channels=temperature_array)
                 if not success_cloud:
                     logging.warning(f"Failed to log temperature data to table '{table_name}'.")
