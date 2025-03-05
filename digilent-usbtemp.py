@@ -65,7 +65,7 @@ def setup_csv(channels, table_name, file_index=1):
 
     os.makedirs(DATA_DIR, exist_ok=True)  # Ensure the directory exists
 
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     filename = os.path.join(DATA_DIR, f"{table_name}_from{timestamp}_part{file_index}.csv")  # <-- Changed filename
     csv_file = open(filename, 'w', newline='')
     csv_writer = csv.writer(csv_file)
