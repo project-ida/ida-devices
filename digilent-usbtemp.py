@@ -133,10 +133,12 @@ def main():
             try:
                 # Read temperature data
                 temperature_data = read_temperatures(usb_temp)
-                print(f"Raw temperature Data: {temperature_data}")
-
+                
                 # Get current timestamp
                 timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]
+                
+                print(f"\n\n{timestamp}")                
+                print(f"\nRaw temperature Data: {temperature_data}")
                 
                 # Replace out-of-range values with None (to be stored as NULL in PostgreSQL)
                 processed_temperatures = []
@@ -152,8 +154,7 @@ def main():
                         temperature_strings.append(f"Channel {ch}: {temp} C")
 
                 # Print formatted output
-                print(f"\n{timestamp}")
-                print("  " + " \n ".join(temperature_strings))  # Inline printout
+                print("" + " \n ".join(temperature_strings))  # Inline printout
                 
                 # Write data to CSV
                 # Format the list of temperatures as a PostgreSQL-style array
