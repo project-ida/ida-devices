@@ -142,19 +142,15 @@ def main():
                 
                 # Replace out-of-range values with None (to be stored as NULL in PostgreSQL)
                 processed_temperatures = []
-                temperature_strings = []  # For nicely formatted print output
                 
                 for ch, temp in temperature_data.items():
                     if temp < -273 or temp > 2000:
                         #logging.info(f"Ch. {ch}: Replacing {temp} with NULL.")
                         processed_temperatures.append(None)  # Use None instead of "NULL"
-                        temperature_strings.append(f"Channel {ch}: None")
+                        print(f"  Channel {ch}: None")
                     else:
                         processed_temperatures.append(f"{temp:.3f}") 
-                        temperature_strings.append(f"Channel {ch}: {temp} C")
-
-                # Print formatted output
-                print("" + " \n ".join(temperature_strings))  # Inline printout
+                        print(f"  Channel {ch}: {temp:.3f} C")
                 
                 # Write data to CSV
                 # Format the list of temperatures as a PostgreSQL-style array
