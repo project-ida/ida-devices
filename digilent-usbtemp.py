@@ -133,7 +133,7 @@ def main():
             try:
                 # Read temperature data
                 temperature_data = read_temperatures(usb_temp)
-                #logging.info(f"Temperature Data: {temperature_data}")
+                print(f"Raw temperature Data: {temperature_data}")
 
                 # Get current timestamp
                 timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]
@@ -146,13 +146,14 @@ def main():
                     if temp < -273 or temp > 2000:
                         #logging.info(f"Ch. {ch}: Replacing {temp} with NULL.")
                         processed_temperatures.append(None)  # Use None instead of "NULL"
+                        temperature_strings.append(f"Channel {ch}: None")
                     else:
-                        processed_temperatures.append(f"{temp:.3f}")  
-                    temperature_strings.append(f"Channel {ch}: {temp} C")
+                        processed_temperatures.append(f"{temp:.3f}") 
+                        temperature_strings.append(f"Channel {ch}: {temp} C")
 
                 # Print formatted output
                 print(f"\n{timestamp}")
-                print("  " + " | ".join(temperature_strings))  # Inline printout
+                print("  " + " \n ".join(temperature_strings))  # Inline printout
                 
                 # Write data to CSV
                 # Format the list of temperatures as a PostgreSQL-style array
