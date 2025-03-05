@@ -148,7 +148,7 @@ def main():
                         processed_temperatures.append(None)  # Use None instead of "NULL"
                     else:
                         processed_temperatures.append(f"{temp:.3f}")  
-                    temperature_strings.append(f"Channel {ch}: {formatted_temp} C")
+                    temperature_strings.append(f"Channel {ch}: {temp} C")
 
                 # Print formatted output
                 print(f"\n{timestamp}")
