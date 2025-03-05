@@ -56,7 +56,7 @@ def reconnect_db():
         logging.error(f"Reconnection failed: {e}")
         return None
 
-def setup_csv(channels, file_index=1):
+def setup_csv(channels, table_name, file_index=1):
     """
     Setup and return a CSV writer and its associated file handle in a named tuple.
     Generates a new file for each batch of MAX_ROWS_PER_FILE rows.
@@ -66,7 +66,7 @@ def setup_csv(channels, file_index=1):
     os.makedirs(DATA_DIR, exist_ok=True)  # Ensure the directory exists
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    filename = os.path.join(DATA_DIR, f"{timestamp}_temperature_data_{file_index}.csv")
+    filename = os.path.join(DATA_DIR, f"{table_name}_from{timestamp}_part{file_index}.csv")  # <-- Changed filename
     csv_file = open(filename, 'w', newline='')
     csv_writer = csv.writer(csv_file)
 
@@ -122,7 +122,7 @@ def main():
 
     # Setup CSV logging
     file_index = 1
-    csv_handle = setup_csv(TEMPERATURE_CHANNELS, file_index)
+    csv_handle = setup_csv(TEMPERATURE_CHANNELS, table_name, file_index)
 
     # Prompt user for temperature device or auto-select if only one is available
     usb_temp = prompt_for_temp_device()
@@ -160,7 +160,7 @@ def main():
                     logging.info(f"Reached {MAX_ROWS_PER_FILE} rows, creating a new file.")
                     csv_handle.file.close()
                     file_index += 1
-                    csv_handle = setup_csv(TEMPERATURE_CHANNELS, file_index)
+                    csv_handle = setup_csv(TEMPERATURE_CHANNELS, table_name, file_index)
                 
                 # Log data to the database
                 temperature_array = np.array(processed_temperatures, dtype=float)  # Explicit dtype to handle None values
