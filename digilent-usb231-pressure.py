@@ -14,7 +14,7 @@ import os
 
 # --- USB-231-specific imports ---
 from mcculw import ul
-from mcculw.enums import ScanOptions, FunctionType, Status, Range
+from mcculw.enums import ScanOptions, FunctionType, Status
 from mcculw.device_info import DaqDeviceInfo
 from ctypes import cast, POINTER, c_double
 
@@ -61,54 +61,64 @@ def setup_csv(channels):
     return CsvHandle(writer=csv_writer, file=csv_file)
 
 def start_acquisition(board_num, low_chan, high_chan, total_count, scan_rate, ai_range, memhandle):
-    scan_options = ScanOptions.BACKGROUND | ScanOptions.SCALEDATA
+    scan_options = ScanOptions.BACKGROUND | ScanOptions.SCALEDATA | ScanOptions.CONTINUOUS
+
     ul.a_in_scan(board_num, low_chan, high_chan, total_count, scan_rate, ai_range, memhandle, scan_options)
 
 def stop_and_cleanup(board_num):
     ul.stop_background(board_num, FunctionType.AIFUNCTION)
 
-def read_and_display_data(board_num, num_channels, csv_handle, db_cloud, table_name, resistor_value, pressure_lowest, pressure_highest, memhandle, total_count):
-    buffer_size_per_channel = 1000
+def read_and_display_data(board_num, num_channels, csv_handle, db_cloud, table_name,
+                          resistor_value, pressure_lowest, pressure_highest,
+                          memhandle, total_count, scan_rate, aggregation_seconds):
+
+    buffer_size_per_channel = scan_rate * aggregation_seconds
+    required_samples = buffer_size_per_channel * num_channels
     aggregation_buffer = np.empty((buffer_size_per_channel, num_channels))
-    samples_collected = 0
-    prev_index = 0
     ctypes_array = cast(memhandle, POINTER(c_double))
+
+    prev_count = 0  # total number of samples previously read
 
     while True:
         try:
             status, curr_count, curr_index = ul.get_status(board_num, FunctionType.AIFUNCTION)
-            if curr_count - samples_collected * num_channels < buffer_size_per_channel * num_channels:
-                sleep(0.1)
-                continue
 
+            if (curr_count - prev_count) < required_samples:
+                continue  # not enough new data yet
+
+            # Aggregate 5 seconds' worth of data
+            start_index = (curr_index - required_samples) % total_count
             for i in range(buffer_size_per_channel):
                 for ch in range(num_channels):
-                    index = (curr_index + i * num_channels + ch) % total_count
-                    aggregation_buffer[i, ch] = ctypes_array[index]
+                    idx = (start_index + i * num_channels + ch) % total_count
+                    aggregation_buffer[i, ch] = ctypes_array[idx]
 
-            samples_collected = 0  # reset
-
+            # Average across time
             aggregated_values = np.mean(aggregation_buffer, axis=0)
 
-            currents = [(value / resistor_value) * 1000 for value in aggregated_values]
+            # Voltage → Current → Pressure
+            currents = [(v / resistor_value) * 1000 for v in aggregated_values]
             pressures = [
                 ((current - 4) * (pressure_highest - pressure_lowest) / 16) + pressure_lowest
                 for current in currents
             ]
 
-            timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            total_values = buffer_size_per_channel * num_channels
+            logging.info(f"Aggregated {buffer_size_per_channel} samples per channel ({total_values} total values)")
 
+            timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
             print(f"{timestamp}")
             for i, (voltage, current, pressure) in enumerate(zip(aggregated_values, currents, pressures)):
                 print(f"  Channel {i+1}: Voltage={voltage:.2f} V, Current={current:.2f} mA, Pressure={pressure:.2f} bar")
+
 
             csv_handle.writer.writerow([timestamp] + aggregated_values.tolist() + currents + pressures)
             csv_handle.file.flush()
 
             if db_cloud:
                 try:
-                    channels_array = np.array(aggregated_values.tolist() + currents + pressures)
-                    success = db_cloud.log(table=table_name, channels=channels_array)
+                    combined = np.array(aggregated_values.tolist() + currents + pressures)
+                    success = db_cloud.log(table=table_name, channels=combined)
                     if not success:
                         logging.warning(f"Failed to log data to table '{table_name}'.")
                         db_cloud = reconnect_db()
@@ -116,6 +126,8 @@ def read_and_display_data(board_num, num_channels, csv_handle, db_cloud, table_n
                     logging.error(f"Database logging failed: {e}")
             else:
                 db_cloud = reconnect_db()
+
+            prev_count += required_samples  # track how much data we've used
 
         except KeyboardInterrupt:
             logging.info("Keyboard interrupt received. Stopping DAQ.")
@@ -139,11 +151,17 @@ def main():
     num_channels = len(channels)
     low_chan = channels[0]
     high_chan = channels[-1]
-    scan_rate = 1000
-    points_per_channel = 1000
+
+    scan_rate = 12500
+    aggregation_seconds = 1
+    points_per_channel = scan_rate * aggregation_seconds  # 5000
     total_count = points_per_channel * num_channels
-    ai_range = Range.BIP10VOLTS
+            
     board_num = 0
+
+    from mcculw.device_info import DaqDeviceInfo
+    daq_dev_info = DaqDeviceInfo(board_num)
+    ai_range = daq_dev_info.get_ai_info().supported_ranges[0]
 
     csv_handle = setup_csv(channels)
     db_cloud = init_db()
@@ -161,7 +179,9 @@ def main():
         input("\nPress ENTER to continue ...")
         start_acquisition(board_num, low_chan, high_chan, total_count, scan_rate, ai_range, memhandle)
         logging.info("DAQ acquisition started. Press Ctrl-C to stop.")
-        read_and_display_data(board_num, num_channels, csv_handle, db_cloud, table_name, resistor_value, pressure_lowest, pressure_highest, memhandle, total_count)
+
+        read_and_display_data(board_num, num_channels, csv_handle, db_cloud, table_name,resistor_value, pressure_lowest, pressure_highest,memhandle, total_count, scan_rate, aggregation_seconds)
+
 
     except Exception as e:
         logging.error(f"Error: {e}")
