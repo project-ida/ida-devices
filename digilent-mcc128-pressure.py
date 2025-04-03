@@ -167,12 +167,20 @@ def read_and_display_data(hat, num_channels, csv_handle, db_cloud, table_name, r
                 samples_collected = 0  # Reset the sample count
 
                 # Calculate currents and pressures
-                currents = [(value / resistor_value) * 1000 for value in aggregated_values]
-                pressures = [
-                    ((current - 4) * (pressure_highest - pressure_lowest) / 16) + pressure_lowest
-                    for current in currents
-                ]
-
+                if resistor_value == 0:
+                    # Direct 0-5V to pressure mapping
+                    pressures = [
+                        ((voltage - 0) * (pressure_highest - pressure_lowest) / 5) + pressure_lowest
+                        for voltage in aggregated_values
+                    ]
+                else:
+                    # 4-20 mA conversion method
+                    currents = [(value / resistor_value) * 1000 for value in aggregated_values]
+                    pressures = [
+                        ((current - 4) * (pressure_highest - pressure_lowest) / 16) + pressure_lowest
+                        for current in currents
+                    ]
+                    
                 timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 
                 # Display output for each channel
