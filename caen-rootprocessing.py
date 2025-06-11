@@ -351,7 +351,6 @@ def process_root_file(file_path):
 # Monitor folder for modified ROOT files
 class ModifiedFileHandler(FileSystemEventHandler):
     def on_modified(self, event):
-        print(event)
         if event.src_path.endswith(".root"):
             file_path = event.src_path  # File path for the current event
 
