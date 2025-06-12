@@ -175,6 +175,7 @@ start-devices.sh
 
 # SQL login details
 psql_credentials
+psql_credentials.py
 
 # Generated data files
 *.csv
