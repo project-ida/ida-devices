@@ -72,7 +72,7 @@ def connect_to_db():
     return conn
 
 # Function to insert event timestamps with picosecond precision
-def insert_ps_to_db(conn, table_name, time_value, ps_data, ps):
+def insert_timestamps_to_db(conn, table_name, time_value, ps_data, ps):
     with conn.cursor() as cur:
         query = f"""
             INSERT INTO {table_name} (time, channels, ps)
@@ -256,8 +256,8 @@ def process_root_file(file_path):
             table_name_neutron_spectrum = get_table_name_from_filename(file_path, 'neutron', 'spectrumnew')
             table_name_gamma_history = get_table_name_from_filename(file_path, 'gamma', 'historynew')
             table_name_gamma_spectrum = get_table_name_from_filename(file_path, 'gamma', 'spectrumnew')
-            table_name_neutron_ps = get_table_name_from_filename(file_path, 'neutron', 'timestamps')
-            table_name_gamma_ps = get_table_name_from_filename(file_path, 'gamma', 'timestamps')
+            table_name_neutron_timestamps = get_table_name_from_filename(file_path, 'neutron', 'timestamps')
+            table_name_gamma_timestamps = get_table_name_from_filename(file_path, 'gamma', 'timestamps')
             
             gamma_abs_times = dfg["Timestamp"] + acquisition_start_timestamp
             neutron_abs_times = dfn["Timestamp"] + acquisition_start_timestamp
@@ -273,7 +273,7 @@ def process_root_file(file_path):
                 # Extract subsecond part and convert to picoseconds
                 subsecond_ps = int((abs_time - time_floor) * 1e12)
                 # Insert neutron event (channels=[1.0] to indicate neutron)
-                insert_ps_to_db(conn, table_name_neutron_ps, time_value, [1.0], subsecond_ps)
+                insert_timestamps_to_db(conn, table_name_neutron_timestamps, time_value, [1.0], subsecond_ps)
             
             for abs_time in gamma_abs_times:
                 # Floor to nearest second for time column
@@ -283,7 +283,7 @@ def process_root_file(file_path):
                 # Extract subsecond part and convert to picoseconds
                 subsecond_ps = int((abs_time - time_floor) * 1e12)
                 # Insert gamma event (channels=[1.0] to indicate gamma)
-                insert_ps_to_db(conn, table_name_gamma_ps, time_value, [1.0], subsecond_ps)
+                insert_timestamps_to_db(conn, table_name_gamma_timestamps, time_value, [1.0], subsecond_ps)
             
             min_timetag = min(df["Timestamp"])
             max_timetag = max(df["Timestamp"])
