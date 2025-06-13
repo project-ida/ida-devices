@@ -258,8 +258,6 @@ def process_root_file(file_path):
             table_name_gamma_spectrum = get_table_name_from_filename(file_path, 'gamma', 'spectrumnew')
             table_name_neutron_ps = get_table_name_from_filename(file_path, 'neutron', 'timestamps')
             table_name_gamma_ps = get_table_name_from_filename(file_path, 'gamma', 'timestamps')
-
-            print(table_name_neutron_ps)
             
             gamma_abs_times = dfg["Timestamp"] + acquisition_start_timestamp
             neutron_abs_times = dfn["Timestamp"] + acquisition_start_timestamp
