@@ -71,6 +71,16 @@ def connect_to_db():
     )
     return conn
 
+# Function to insert event timestamps with picosecond precision
+def insert_ps_to_db(conn, table_name, time_value, ps_data, ps):
+    with conn.cursor() as cur:
+        query = f"""
+            INSERT INTO {table_name} (time, channels, ps)
+            VALUES (%s, %s::double precision[], %s)
+        """
+        cur.execute(query, (time_value, ps_data, ps))
+    conn.commit()
+
 # Function to insert CPS data into the database
 def insert_cps_to_db(conn, table_name, time_value, cps_data):
     cps_data = [float(cps) for cps in cps_data]  # Convert NumPy values to Python floats
@@ -246,9 +256,34 @@ def process_root_file(file_path):
             table_name_neutron_spectrum = get_table_name_from_filename(file_path, 'neutron', 'spectrumnew')
             table_name_gamma_history = get_table_name_from_filename(file_path, 'gamma', 'historynew')
             table_name_gamma_spectrum = get_table_name_from_filename(file_path, 'gamma', 'spectrumnew')
+            table_name_neutron_ps = get_table_name_from_filename(file_path, 'neutron', 'timestamps')
+            table_name_gamma_ps = get_table_name_from_filename(file_path, 'gamma', 'timestamps')
             
             gamma_abs_times = dfg["Timestamp"] + acquisition_start_timestamp
             neutron_abs_times = dfn["Timestamp"] + acquisition_start_timestamp
+
+            conn = connect_to_db()
+
+            # Insert individual event timestamps for neutrons and gammas
+            for abs_time in neutron_abs_times:
+                # Floor to nearest second for time column
+                time_floor = np.floor(abs_time)
+                # Convert to human-readable datetime
+                time_value = datetime.fromtimestamp(time_floor).strftime('%Y-%m-%d %H:%M:%S')
+                # Extract subsecond part and convert to picoseconds
+                subsecond_ps = int((abs_time - time_floor) * 1e12)
+                # Insert neutron event (channels=[1.0] to indicate neutron)
+                insert_ps_to_db(conn, table_name_neutron_ps, time_value, [1.0], subsecond_ps)
+            
+            for abs_time in gamma_abs_times:
+                # Floor to nearest second for time column
+                time_floor = np.floor(abs_time)
+                 # Convert to human-readable datetime
+                time_value = datetime.fromtimestamp(time_floor).strftime('%Y-%m-%d %H:%M:%S')
+                # Extract subsecond part and convert to picoseconds
+                subsecond_ps = int((abs_time - time_floor) * 1e12)
+                # Insert gamma event (channels=[1.0] to indicate gamma)
+                insert_ps_to_db(conn, table_name_gamma_ps, time_value, [1.0], subsecond_ps)
             
             min_timetag = min(df["Timestamp"])
             max_timetag = max(df["Timestamp"])
@@ -279,8 +314,6 @@ def process_root_file(file_path):
                 )
             
             time_axis = [datetime.fromtimestamp(t) for t in (time_bins[:-1] + time_bins[1:]) / 2]
-            
-            conn = connect_to_db()
             
             for i, t in enumerate(time_axis[:-1]):  # Exclude the last time bin
                 time_value = t.strftime('%Y-%m-%d %H:%M:%S')
