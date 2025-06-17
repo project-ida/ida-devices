@@ -41,7 +41,6 @@ import re
 from datetime import datetime
 import numpy as np
 from pathlib import Path
-import glob
 
 # PostgreSQL connection details (replace with your credentials)
 from psql_credentials import PGHOST, PGPORT, PGDATABASE, PGUSER, PGPASSWORD
@@ -312,24 +311,40 @@ def main():
         if not os.path.isdir(raw_folder):
             print(f"Error: {raw_folder} subfolder does not exist")
             return
-        
-        # Build glob pattern to match files like *_CH0@*.root or .root2
-        pattern = os.path.join(raw_folder, f"*{file_pattern}*.root*")
 
-        # Get list of ROOT files matching pattern in RAW subfolder
-        files = glob.glob(pattern)
+        # Efficient scan using os.scandir
+        print("🔍 Starting file enumeration (this may take a few minutes)...")
+        all_files = []
+        try:
+            with os.scandir(raw_folder) as entries:
+                for i, entry in enumerate(entries):
+                    if entry.is_file():
+                        all_files.append(entry.path)
+                    if i % 1000 == 0 and i != 0:
+                        print(f"✅ Scanned {i} files so far...")
+        except Exception as e:
+            print(f"Error scanning directory: {e}")
+            return
 
-        if not files:
+        print(f"🎉 Done! Total files found: {len(all_files)}")
+
+        # Match channel pattern and extensions
+        matching_files = [
+            f for f in all_files
+            if file_pattern in f and (f.endswith('.root') or f.endswith('.root2'))
+        ]
+
+        if not matching_files:
             print(f"No files with channel number '{channel_input}' and containing '.root' found in {raw_folder}")
             return
 
         # Sort files by number before .root
-        files.sort(key=get_file_number)
+        matching_files.sort(key=get_file_number)
 
         # Create DataFrame with full paths
         df = pd.DataFrame({
-            'filename': [os.path.join(raw_folder, f) for f in files],
-            'processed': [False] * len(files)
+            'filename': matching_files,
+            'processed': [False] * len(matching_files)
         })
         df.to_csv(csv_path, index=False)
         total_files = len(df)
@@ -337,21 +352,21 @@ def main():
         print()
 
     # Process unprocessed files
-    total_files = len(df)  # Get total files for progress reporting
+    total_files = len(df)
     for index, row in df.iterrows():
         if not row['processed']:
             file_path = row['filename']
-            current_file_number = index + 1  # 1-based index for user-friendly display
+            current_file_number = index + 1
             if os.path.exists(file_path):
                 print(f"Processing file {current_file_number} out of {total_files}: {os.path.basename(file_path)}")
                 success = process_root_file(file_path, table_prefix)
                 if success:
                     df.at[index, 'processed'] = True
-                    df.to_csv(csv_path, index=False)  # Update CSV after each file
-                    print()  # Add this line to create a line break after processing each file
+                    df.to_csv(csv_path, index=False)
+                    print()
             else:
                 print(f"File not found: {file_path}")
-                df.at[index, 'processed'] = True  # Mark as processed to skip in future
+                df.at[index, 'processed'] = True
                 df.to_csv(csv_path, index=False)
 
     print("Processing complete")
