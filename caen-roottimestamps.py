@@ -36,6 +36,7 @@ import os
 import pandas as pd
 import uproot
 import psycopg2
+from psycopg2.extras import execute_values
 import re
 from datetime import datetime
 import numpy as np
@@ -87,6 +88,19 @@ def insert_timestamps_to_db(conn, table_name, time_value, ps_data, ps):
             VALUES (%s, %s::double precision[], %s)
         """
         cur.execute(query, (time_value, ps_data, ps))
+    conn.commit()
+
+
+# Batched insert many timestamp events  with picosecond precision
+def insert_many_timestamps_to_db(conn, table_name, rows, batch_size=1000):
+    with conn.cursor() as cur:
+        query = f"""
+            INSERT INTO {table_name} (time, channels, ps)
+            VALUES %s
+        """
+        for i in range(0, len(rows), batch_size):
+            batch = rows[i:i+batch_size]
+            execute_values(cur, query, batch)
     conn.commit()
 
 # Function to get the table name based on file name and particle type
@@ -228,19 +242,25 @@ def process_root_file(file_path, table_prefix):
 
             # Insert neutron timestamps (only above threshold)
             table_name_neutron_timestamps = get_table_name_from_filename(file_path, table_prefix, 'neutron', 'timestamps')
+            neutron_rows = []
             for abs_time in neutron_abs_times_above:
                 time_floor = np.floor(abs_time)
                 time_value = datetime.fromtimestamp(time_floor).strftime('%Y-%m-%d %H:%M:%S')
                 subsecond_ps = int((abs_time - time_floor) * 1e12)
-                insert_timestamps_to_db(conn, table_name_neutron_timestamps, time_value, [1.0], subsecond_ps)
+                neutron_rows.append((time_value, [1.0], subsecond_ps))
+
+            insert_many_timestamps_to_db(conn, table_name_neutron_timestamps, neutron_rows)
 
             # Insert gamma timestamps
             table_name_gamma_timestamps = get_table_name_from_filename(file_path, table_prefix, 'gamma', 'timestamps')
+            gamma_rows = []
             for abs_time in gamma_abs_times:
                 time_floor = np.floor(abs_time)
                 time_value = datetime.fromtimestamp(time_floor).strftime('%Y-%m-%d %H:%M:%S')
                 subsecond_ps = int((abs_time - time_floor) * 1e12)
-                insert_timestamps_to_db(conn, table_name_gamma_timestamps, time_value, [1.0], subsecond_ps)
+                gamma_rows.append((time_value, [1.0], subsecond_ps))
+
+            insert_many_timestamps_to_db(conn, table_name_gamma_timestamps, gamma_rows)
 
             conn.close()
             print(f"Done")
