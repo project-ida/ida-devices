@@ -32,6 +32,7 @@
 #   - Database tables must exist with schema: time (timestamp), channels (double precision[]), ps (bigint).
 #   - Energy threshold defaults to 0 if not specified, including all neutrons.
 
+import argparse
 import os
 import pandas as pd
 import uproot
@@ -90,8 +91,7 @@ def insert_timestamps_to_db(conn, table_name, time_value, ps_data, ps):
         cur.execute(query, (time_value, ps_data, ps))
     conn.commit()
 
-
-# Batched insert many timestamp events  with picosecond precision
+# Batched insert many timestamp events with picosecond precision
 def insert_many_timestamps_to_db(conn, table_name, rows, batch_size=1000):
     with conn.cursor() as cur:
         query = f"""
@@ -158,7 +158,7 @@ def get_acquisition_start_from_txt(folder_path):
         raise
 
 # Function to process a single ROOT file
-def process_root_file(file_path, table_prefix):
+def process_root_file(file_path, table_prefix, process_neutrons=True, process_gammas=True):
     try:
         # Get channel number
         channel_number = get_channel_number_from_filename(file_path)
@@ -216,55 +216,57 @@ def process_root_file(file_path, table_prefix):
             df["Timestamp"] = df["Timestamp"] / 1e12
 
             # Apply PSD or fiducial filtering
-            dfn = df.copy()
-            dfg = df.copy()
+            dfn = df.copy() if process_neutrons else None
+            dfg = df.copy() if process_gammas else None
             if use_fiducial_curves:
-                gamma_up_values = fiducial_curve(df["Energy"], *fiducial_params_gammas)
-                dfn = dfn[dfn["PSP"] > gamma_up_values]
-                neutron_up_values = fiducial_curve(dfn["Energy"], *fiducial_params_neutrons)
-                dfn = dfn[dfn["PSP"] < neutron_up_values]
-                dfg = dfg[dfg["PSP"] < gamma_up_values]
+                if process_gammas:
+                    gamma_up_values = fiducial_curve(df["Energy"], *fiducial_params_gammas)
+                    dfg = dfg[dfg["PSP"] < gamma_up_values]
+                if process_neutrons:
+                    gamma_up_values = fiducial_curve(df["Energy"], *fiducial_params_gammas)
+                    dfn = dfn[dfn["PSP"] > gamma_up_values]
+                    neutron_up_values = fiducial_curve(dfn["Energy"], *fiducial_params_neutrons)
+                    dfn = dfn[dfn["PSP"] < neutron_up_values]
             else:
-                dfn = dfn[dfn["PSP"] > psd_threshold]  # Neutrons
-                dfg = dfg[dfg["PSP"] < psd_threshold]  # Gammas
-
-            # Calculate absolute times
-            gamma_abs_times = dfg["Timestamp"] + acquisition_start_timestamp
-            neutron_abs_times = dfn["Timestamp"] + acquisition_start_timestamp
-
-            # Filter neutron times to include only those above energy threshold
-            above_threshold_mask = dfn["Energy"] >= energy_threshold
-            neutron_abs_times_above = neutron_abs_times[above_threshold_mask]
-            print(f"Filtered {len(neutron_abs_times_above)} neutron events above energy threshold ({energy_threshold}) out of {len(neutron_abs_times)} total neutron events")
+                if process_neutrons:
+                    dfn = dfn[dfn["PSP"] > psd_threshold]  # Neutrons
+                if process_gammas:
+                    dfg = dfg[dfg["PSP"] < psd_threshold]  # Gammas
 
             # Connect to database
             conn = connect_to_db()
 
-            # Insert neutron timestamps (only above threshold)
-            table_name_neutron_timestamps = get_table_name_from_filename(file_path, table_prefix, 'neutron', 'timestamps')
-            neutron_rows = []
-            for abs_time in neutron_abs_times_above:
-                time_floor = np.floor(abs_time)
-                time_value = datetime.fromtimestamp(time_floor).strftime('%Y-%m-%d %H:%M:%S')
-                subsecond_ps = int((abs_time - time_floor) * 1e12)
-                neutron_rows.append((time_value, [1.0], subsecond_ps))
+            # Process neutrons if requested
+            if process_neutrons and dfn is not None:
+                neutron_abs_times = dfn["Timestamp"] + acquisition_start_timestamp
+                above_threshold_mask = dfn["Energy"] >= energy_threshold
+                neutron_abs_times_above = neutron_abs_times[above_threshold_mask]
+                print(f"Filtered {len(neutron_abs_times_above)} neutron events above energy threshold ({energy_threshold}) out of {len(neutron_abs_times)} total neutron events")
 
-            insert_many_timestamps_to_db(conn, table_name_neutron_timestamps, neutron_rows)
+                table_name_neutron_timestamps = get_table_name_from_filename(file_path, table_prefix, 'neutron', 'timestamps')
+                neutron_rows = []
+                for abs_time in neutron_abs_times_above:
+                    time_floor = np.floor(abs_time)
+                    time_value = datetime.fromtimestamp(time_floor).strftime('%Y-%m-%d %H:%M:%S')
+                    subsecond_ps = int((abs_time - time_floor) * 1e12)
+                    neutron_rows.append((time_value, [1.0], subsecond_ps))
 
-            print("Inserted neutron timestamps into database")
+                insert_many_timestamps_to_db(conn, table_name_neutron_timestamps, neutron_rows)
+                print("Inserted neutron timestamps into database")
 
-            # Insert gamma timestamps
-            table_name_gamma_timestamps = get_table_name_from_filename(file_path, table_prefix, 'gamma', 'timestamps')
-            gamma_rows = []
-            for abs_time in gamma_abs_times:
-                time_floor = np.floor(abs_time)
-                time_value = datetime.fromtimestamp(time_floor).strftime('%Y-%m-%d %H:%M:%S')
-                subsecond_ps = int((abs_time - time_floor) * 1e12)
-                gamma_rows.append((time_value, [1.0], subsecond_ps))
+            # Process gammas if requested
+            if process_gammas and dfg is not None:
+                gamma_abs_times = dfg["Timestamp"] + acquisition_start_timestamp
+                table_name_gamma_timestamps = get_table_name_from_filename(file_path, table_prefix, 'gamma', 'timestamps')
+                gamma_rows = []
+                for abs_time in gamma_abs_times:
+                    time_floor = np.floor(abs_time)
+                    time_value = datetime.fromtimestamp(time_floor).strftime('%Y-%m-%d %H:%M:%S')
+                    subsecond_ps = int((abs_time - time_floor) * 1e12)
+                    gamma_rows.append((time_value, [1.0], subsecond_ps))
 
-            insert_many_timestamps_to_db(conn, table_name_gamma_timestamps, gamma_rows)
-
-            print("Inserted gamma timestamps into database")
+                insert_many_timestamps_to_db(conn, table_name_gamma_timestamps, gamma_rows)
+                print("Inserted gamma timestamps into database")
 
             conn.close()
             print(f"Done")
@@ -276,6 +278,21 @@ def process_root_file(file_path, table_prefix):
 
 # Main function
 def main():
+    # Set up argument parser
+    parser = argparse.ArgumentParser(description="Process ROOT files for neutron and/or gamma events.")
+    parser.add_argument('-n', '--neutrons', action='store_true', help="Process only neutron events")
+    parser.add_argument('-g', '--gammas', action='store_true', help="Process only gamma events")
+    args = parser.parse_args()
+
+    # Determine which particles to process
+    process_neutrons = args.neutrons or (not args.neutrons and not args.gammas)
+    process_gammas = args.gammas or (not args.neutrons and not args.gammas)
+    if args.neutrons and args.gammas:
+        process_neutrons = True
+        process_gammas = True
+
+    print(f"Processing: Neutrons={process_neutrons}, Gammas={process_gammas}")
+
     table_prefix = "caen8ch"  # Default table prefix
     csv_path = "processed_files.csv"
     default_channel = 0  # Default channel number
@@ -345,7 +362,7 @@ def main():
             current_file_number = index + 1
             if os.path.exists(file_path):
                 print(f"Processing file {current_file_number} out of {total_files}: {os.path.basename(file_path)}")
-                success = process_root_file(file_path, table_prefix)
+                success = process_root_file(file_path, table_prefix, process_neutrons, process_gammas)
                 if success:
                     df.at[index, 'processed'] = True
                     df.to_csv(csv_path, index=False)
