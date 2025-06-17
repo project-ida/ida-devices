@@ -251,6 +251,8 @@ def process_root_file(file_path, table_prefix):
 
             insert_many_timestamps_to_db(conn, table_name_neutron_timestamps, neutron_rows)
 
+            print("Inserted neutron timestamps into database")
+
             # Insert gamma timestamps
             table_name_gamma_timestamps = get_table_name_from_filename(file_path, table_prefix, 'gamma', 'timestamps')
             gamma_rows = []
@@ -261,6 +263,8 @@ def process_root_file(file_path, table_prefix):
                 gamma_rows.append((time_value, [1.0], subsecond_ps))
 
             insert_many_timestamps_to_db(conn, table_name_gamma_timestamps, gamma_rows)
+
+            print("Inserted gamma timestamps into database")
 
             conn.close()
             print(f"Done")
