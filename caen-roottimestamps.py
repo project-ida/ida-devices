@@ -40,6 +40,7 @@ import re
 from datetime import datetime
 import numpy as np
 from pathlib import Path
+import glob
 
 # PostgreSQL connection details (replace with your credentials)
 from psql_credentials import PGHOST, PGPORT, PGDATABASE, PGUSER, PGPASSWORD
@@ -288,9 +289,13 @@ def main():
         if not os.path.isdir(raw_folder):
             print(f"Error: {raw_folder} subfolder does not exist")
             return
+        
+        # Build glob pattern to match files like *_CH0@*.root or .root2
+        pattern = os.path.join(raw_folder, f"*{file_pattern}*.root*")
 
         # Get list of ROOT files matching pattern in RAW subfolder
-        files = [f for f in os.listdir(raw_folder) if '.root' in f and file_pattern in f]
+        files = glob.glob(pattern)
+
         if not files:
             print(f"No files with channel number '{channel_input}' and containing '.root' found in {raw_folder}")
             return
