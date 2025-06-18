@@ -1,0 +1,259 @@
+# caen-rootpostprocessing.py
+#
+# Purpose:
+#   Processes ROOT files from a nuclear physics experiment to extract event timestamps,
+#   energy, and PSP, storing them in a PostgreSQL database. Stores energy and PSP as
+#   separate columns in a single table per channel. Keeps track of processed files in a CSV to
+#   avoid reprocessing.
+#
+# Functionality:
+#   - Reads ROOT files from a RAW folder, matching a user-specified channel pattern (e.g., _CH0@).
+#   - Extracts timestamps, energy, and energy-short from ROOT trees, computing PSP.
+#   - Inserts timestamps with picosecond precision, energy, and PSP into database tables
+#     (e.g., caen8ch_ch0, caen8ch_ch1).
+#   - Keeps track of processed files in processed_files.csv and skips already processed files.
+#
+# Requirements:
+#   - Folder structure: Parent folder with a Compass .txt file (containing "Start time = ..." on line 2)
+#     and a RAW subfolder with ROOT files.
+#   - Files:
+#     - psql_credentials.py: Defines PGHOST, PGPORT, PGDATABASE, PGUSER, PGPASSWORD for PostgreSQL.
+#
+# Usage:
+#   - Run: python caen-rootpostprocessing.py
+#   - Prompts for folder path and channel number (default 0).
+#   - Creates processed_files.csv to track progress.
+#   - Outputs data to PostgreSQL tables with prefix caen8ch (e.g., caen8ch_ch0).
+#
+# Notes:
+#   - Ensure Google Drive folders are marked "Available Offline" for local usage.
+#   - Database tables must exist with schema: time (timestamp), energy (double precision), psp (double precision), ps (bigint).
+
+
+import argparse
+import os
+import pandas as pd
+import uproot
+import psycopg2
+from psycopg2.extras import execute_values
+import re
+from datetime import datetime
+import numpy as np
+from pathlib import Path
+import glob
+
+# PostgreSQL connection details (replace with your credentials)
+from psql_credentials import PGHOST, PGPORT, PGDATABASE, PGUSER, PGPASSWORD
+
+# Connect to PostgreSQL database
+def connect_to_db():
+    conn = psycopg2.connect(
+        dbname=PGDATABASE,
+        user=PGUSER,
+        password=PGPASSWORD,
+        host=PGHOST,
+        port=PGPORT
+    )
+    return conn
+
+# Function to insert event timestamps with picosecond precision
+def insert_timestamps_to_db(conn, table_name, time_value, energy, psp, ps):
+    with conn.cursor() as cur:
+        query = f"""
+            INSERT INTO {table_name} (time, energy, psp, ps)
+            VALUES (%s, %s, %s, %s)
+        """
+        cur.execute(query, (time_value, energy, psp, ps))
+    conn.commit()
+
+# Batched insert many timestamp events with picosecond precision
+def insert_many_timestamps_to_db(conn, table_name, rows, batch_size=1000):
+    with conn.cursor() as cur:
+        query = f"""
+            INSERT INTO {table_name} (time, energy, psp, ps)
+            VALUES %s
+        """
+        for i in range(0, len(rows), batch_size):
+            batch = rows[i:i+batch_size]
+            execute_values(cur, query, batch)
+    conn.commit()
+
+# Function to get the table name based on channel number
+def get_table_name_from_channel(channel_number, table_prefix):
+    return f"{table_prefix}_ch{channel_number}"
+
+# Function to extract the number before .root for sorting
+def get_file_number(filename):
+    match = re.search(r'_(\d+)\.root', filename)
+    return int(match.group(1)) if match else 0
+
+# Function to extract acquisition start time from .txt file
+def get_acquisition_start_from_txt(folder_path):
+    try:
+        # Find the first .txt file in the folder
+        txt_files = [f for f in os.listdir(folder_path) if f.endswith('.txt')]
+        if not txt_files:
+            raise FileNotFoundError(f"No .txt file found in {folder_path}")
+        
+        txt_file = os.path.join(folder_path, txt_files[0])
+        
+        # Read the second line
+        with open(txt_file, 'r') as f:
+            lines = f.readlines()
+            if len(lines) < 2:
+                raise ValueError(f"{txt_file} does not have enough lines")
+            
+            second_line = lines[1].strip()
+            # Expect format: "Start time = Tue Feb 25 19:54:42 2025"
+            if not second_line.startswith("Start time = "):
+                raise ValueError(f"Second line in {txt_file} does not start with 'Start time = '")
+            
+            # Extract datetime string
+            datetime_str = second_line.replace("Start time = ", "")
+            # Parse datetime (format: Tue Feb 25 19:54:42 2025)
+            dt = datetime.strptime(datetime_str, "%a %b %d %H:%M:%S %Y")
+            # Convert to Unix timestamp
+            return dt.timestamp()
+    
+    except Exception as e:
+        print(f"Error reading acquisition start time from {txt_file}: {e}")
+        raise
+
+# Function to process a single ROOT file
+def process_root_file(file_path, table_prefix, channel_number):
+    try:
+        print(f"Processing Channel: {channel_number}")
+
+        # Get acquisition start time from .txt file in parent folder
+        parent_folder = os.path.dirname(os.path.dirname(file_path))  # Parent of RAW
+        acquisition_start_timestamp = get_acquisition_start_from_txt(parent_folder)
+
+        # Open ROOT file
+        with uproot.open(file_path) as file:
+            tree = file["Data_R"]
+            timetag = tree["Timestamp"].array(library="np") * 1e-12
+            if len(timetag) == 0:
+                print(f"No data found in {file_path}")
+                return False
+
+            # Load data
+            branches_to_import = ["Timestamp", "Energy", "EnergyShort"]
+            df = tree.arrays(branches_to_import, library="pd")
+            df["PSP"] = (df['Energy'] - df['EnergyShort']) / df['Energy']
+            df["Timestamp"] = df["Timestamp"] / 1e12
+
+            # Connect to database
+            conn = connect_to_db()
+
+            # Process all events
+            abs_times = df["Timestamp"] + acquisition_start_timestamp
+            print(f"Processing {len(abs_times)} events")
+
+            table_name = get_table_name_from_channel(channel_number, table_prefix)
+            event_rows = []
+            for abs_time, energy, psp in zip(abs_times, df["Energy"], df["PSP"]):
+                time_floor = np.floor(abs_time)
+                time_value = datetime.fromtimestamp(time_floor).strftime('%Y-%m-%d %H:%M:%S')
+                subsecond_ps = int((abs_time - time_floor) * 1e12)
+                event_rows.append((time_value, float(energy), float(psp), subsecond_ps))
+
+            insert_many_timestamps_to_db(conn, table_name, event_rows)
+            print("Inserted event data into database")
+
+            conn.close()
+            print(f"Done")
+            return True
+
+    except Exception as e:
+        print(f"Failed to process {file_path}: {e}")
+        return False
+
+# Main function
+def main():
+    # Set up argument parser
+    parser = argparse.ArgumentParser(description="Process ROOT files for all events")
+    args = parser.parse_args()
+
+    table_prefix = "caen8ch"  # Default table prefix
+    csv_path = "processed_files.csv"
+    default_channel = 0  # Default channel number
+
+    # Check if CSV exists
+    if os.path.exists(csv_path):
+        df = pd.read_csv(csv_path)
+        total_files = len(df)
+        unprocessed_files = len(df[~df['processed']])
+        print(f"Found {total_files} files in {csv_path}, {unprocessed_files} remain to be processed.")
+        print()
+    else:
+        # Prompt for folder and channel number
+        folder_path = input("Enter the folder path containing the Compass .txt file (ROOT files in RAW subfolder): ")
+        channel_input = input(f"Enter channel number (default '{default_channel}'): ") or str(default_channel)
+        file_pattern = f"_CH{channel_input}@"
+
+        # Resolve the folder path to handle virtual file systems (e.g., Google Drive)
+        try:
+            folder_path = str(Path(folder_path).resolve())
+            print(f"Resolved folder path: {folder_path}")
+        except Exception as e:
+            print(f"Error resolving path '{folder_path}': {e}")
+            print("If using Google Drive, ensure the folder is marked 'Available Offline' or try using the path under ~/Library/CloudStorage/GoogleDrive-<your_email>/My Drive")
+            return
+
+        # Validate folder
+        if not os.path.isdir(folder_path):
+            print(f"Error: {folder_path} is not a valid directory")
+            print("If using Google Drive, ensure the folder is marked 'Available Offline' or try using the path under ~/Library/CloudStorage/GoogleDrive-<your_email>/My Drive")
+            return
+
+        # Validate RAW subfolder
+        raw_folder = os.path.join(folder_path, "RAW")
+        if not os.path.isdir(raw_folder):
+            print(f"Error: {raw_folder} subfolder does not exist")
+            return
+        
+        # Build glob pattern to match files like *_CH0@*.root or .root2
+        pattern = os.path.join(raw_folder, f"*{file_pattern}*.root*")
+
+        # Get list of ROOT files matching pattern in RAW subfolder
+        files = glob.glob(pattern)
+
+        if not files:
+            print(f"No files with channel number '{channel_input}' and containing '.root' found in {raw_folder}")
+            return
+
+        # Sort files by number before .root
+        files.sort(key=get_file_number)
+
+        # Create DataFrame with full paths
+        df = pd.DataFrame({
+            'filename': files,  # Use full paths directly from glob
+            'processed': [False] * len(files)
+        })
+        df.to_csv(csv_path, index=False)
+        total_files = len(df)
+        print(f"Found {total_files} files to process. Created CSV: {csv_path}")
+        print()
+
+    # Process unprocessed files
+    total_files = len(df)
+    for index, row in df.iterrows():
+        if not row['processed']:
+            file_path = row['filename']
+            current_file_number = index + 1
+            if os.path.exists(file_path):
+                print(f"Processing file {current_file_number} out of {total_files}: {os.path.basename(file_path)}")
+                success = process_root_file(file_path, table_prefix, channel_input)
+                if success:
+                    df.at[index, 'processed'] = True
+                    df.to_csv(csv_path, index=False)
+                    print()
+            else:
+                print(f"File not found: {file_path}")
+                df.at[index, 'processed'] = True
+                df.to_csv(csv_path, index=False)
+
+    print("Processing complete")
+
+if __name__ == "__main__":
+    main()
