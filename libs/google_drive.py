@@ -35,7 +35,7 @@ def get_folder_id(parent_folder_id, path):
         current_folder_id = files[0]['id']
     return current_folder_id
 
-def save_all_drive_files(folder_id, output_csv='all_files.csv'):
+def save_filenames(folder_id, output_csv='all_files.csv'):
     """
     List files inside a Drive folder and save to CSV, showing progress.
     
