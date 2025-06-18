@@ -82,6 +82,14 @@ def insert_many_timestamps_to_db(conn, table_name, rows, batch_size=1000):
 def get_table_name_from_channel(channel_number, table_prefix):
     return f"{table_prefix}_ch{channel_number}"
 
+# Function to get channel number from file name
+def get_channel_number_from_filename(file_path):
+    match = re.search(r'CH(\d)', file_path)
+    if match:
+        return match.group(1)
+    else:
+        raise ValueError(f"Could not extract channel number from file name: {file_path}")
+
 # Function to extract the number before .root for sorting
 def get_file_number(filename):
     match = re.search(r'_(\d+)\.root', filename)
@@ -183,6 +191,7 @@ def main():
         df = pd.read_csv(csv_path)
         total_files = len(df)
         unprocessed_files = len(df[~df['processed']])
+        channel_input = get_channel_number_from_filename(df.iloc[0]['filename']) # use the first file in the CSV to determine channel number
         print(f"Found {total_files} files in {csv_path}, {unprocessed_files} remain to be processed.")
         print()
     else:
