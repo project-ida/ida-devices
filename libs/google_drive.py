@@ -1,6 +1,10 @@
 from googleapiclient.discovery import build
 import pandas as pd
 import time
+import os
+import threading
+from queue import Queue
+import random
 
 # Initialize drive_service (assumes auth.authenticate_user() was called before importing)
 drive_service = build('drive', 'v3')
@@ -50,7 +54,7 @@ def save_filenames(folder_id, output_csv='all_files.csv'):
     batch_count = 0
     total_files = 0
     with open(output_csv, 'w') as f:
-        f.write('File Name\n')
+        f.write('filename\n')
     print("Fetching files...")
     while True:
         response = drive_service.files().list(
@@ -65,7 +69,7 @@ def save_filenames(folder_id, output_csv='all_files.csv'):
         files = response.get('files', [])
         batch = [f['name'] for f in files]
         if batch:
-            pd.DataFrame(batch, columns=['File Name']).to_csv(
+            pd.DataFrame(batch, columns=['filename']).to_csv(
                 output_csv, mode='a', header=False, index=False
             )
         batch_count += 1
@@ -77,3 +81,61 @@ def save_filenames(folder_id, output_csv='all_files.csv'):
         time.sleep(0.5)
     print(f"Found {total_files} files.")
     return
+
+def wait_for_drive_ready(csv_path='processed_files.csv', timeout=5, retry_interval=30):
+    """
+    Check if a random file from CSV exists in Google Drive mount until accessible, indicating Drive is ready.
+    
+    Args:
+        csv_path (str): Path to CSV with at least a 'filename' column containing full file paths.
+        timeout (int): Seconds to wait per existence check (default: 5).
+        retry_interval (int): Seconds to wait between retries (default: 30).
+    """
+    # Read CSV and select random file
+    try:
+        df = pd.read_csv(csv_path)
+        if 'filename' not in df.columns:
+            print("CSV missing 'filename' column")
+            raise SystemExit
+        if df.empty:
+            print("CSV is empty, no files found")
+            raise SystemExit
+        file_path = df['filename'].sample(n=1).iloc[0]
+        file_name = os.path.basename(file_path)
+    except FileNotFoundError:
+        print(f"CSV file {csv_path} not found")
+        raise SystemExit
+    except Exception as e:
+        print(f"Error reading CSV: {e}")
+        raise SystemExit
+    
+    print(f"Checking if Google Drive is ready (testing with file: {file_name})...")
+    
+    def check_file_exists_with_timeout(path, timeout):
+        result = Queue()
+        def target():
+            try:
+                exists = os.path.exists(path)
+                result.put(exists)
+            except Exception:
+                result.put(False)
+        thread = threading.Thread(target=target)
+        thread.daemon = True
+        thread.start()
+        thread.join(timeout)
+        return False if thread.is_alive() else result.get()
+    
+    # Poll with timeout and retry
+    attempt = 1
+    start_time = time.time()
+    
+    while True:
+        if check_file_exists_with_timeout(file_path, timeout):
+            total_time = time.time() - start_time
+            print(f"Drive is ready after {attempt} attempts (total wait: {total_time:.2f} seconds)")
+            break
+        else:
+            total_time = time.time() - start_time
+            print(f"Retry {attempt}: File not accessible, total wait: {total_time:.2f} seconds")
+            attempt += 1
+            time.sleep(retry_interval)
