@@ -46,34 +46,47 @@ def get_folder_id(parent_folder_id, path):
         The ID of the target folder.
     
     Raises:
-        Exception: If a folder in the path is not found or authentication fails.
+        ValueError: If the parent_folder_id or path is invalid.
+        Exception: If a folder in the path is not found or other API errors occur.
     """
     global drive_service
     if drive_service is None:
         initialize_drive_service()
     
+    if not parent_folder_id or not isinstance(parent_folder_id, str):
+        raise ValueError(f"Invalid parent_folder_id: {parent_folder_id}")
+    
+    if not path or not isinstance(path, str):
+        raise ValueError(f"Invalid path: {path}")
+    
     current_folder_id = parent_folder_id
     parts = path.strip('/').split('/')
     for part in parts:
+        if not part:  # Skip empty path parts
+            continue
+        print(f"Searching for folder '{part}' in parent folder ID '{current_folder_id}'...")
         try:
             response = drive_service.files().list(
                 q=f"'{current_folder_id}' in parents and name = '{part}' and mimeType = 'application/vnd.google-apps.folder' and trashed = false",
                 spaces='drive',
-                fields='files(id)',
+                fields='files(id, name)',
                 supportsAllDrives=True,
                 includeItemsFromAllDrives=True
             ).execute()
             files = response.get('files', [])
             if not files:
                 raise Exception(f"Folder '{part}' not found in parent folder ID '{current_folder_id}'.")
+            if len(files) > 1:
+                print(f"Warning: Multiple folders named '{part}' found in parent ID '{current_folder_id}'. Using the first one.")
             current_folder_id = files[0]['id']
+            print(f"Found folder '{part}' with ID '{current_folder_id}'.")
         except (HttpError, RefreshError) as e:
             if isinstance(e, HttpError) and e.resp.status in [401, 403]:  # Unauthorized or Forbidden
                 prompt_for_auth(f"HTTP Error {e.resp.status}: {e}")
             elif isinstance(e, RefreshError):
                 prompt_for_auth(f"Credential refresh failed: {e}")
             else:
-                raise Exception(f"Error accessing folder '{part}': {e}")
+                raise Exception(f"Error accessing folder '{part}' in parent ID '{current_folder_id}': {e}")
     return current_folder_id
 
 def save_filenames(folder_id, output_csv='all_files.csv'):
