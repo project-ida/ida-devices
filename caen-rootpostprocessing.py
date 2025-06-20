@@ -8,14 +8,14 @@
 #
 # Functionality:
 #   - Reads ROOT files from a RAW folder, matching a user-specified channel pattern (e.g., _CH0@).
-#   - Extracts timestamps, energy, and energy-short from ROOT trees, computing PSP.
-#   - Inserts timestamps with picosecond precision and [psp, energy] into database tables
+#   - Extracts timestamps, energy, and energy from ROOT trees, computing PSP.
+#   - Inserts timestamps with microsecond precision in the time column and stores the sub-second offset with picosecond precision in the ps column, along with [psp, energy] in the channels column, into database tables
 #     (e.g., caen8ch_ch0, caen8ch_ch1).
 #   - Keeps track of processed files in processed_files.csv and skips already processed files.
 #
 # Requirements:
-#   - Folder structure: Parent folder with a Compass .txt file (containing "Start time = ..." on line 2)
-#     and a RAW subfolder with ROOT files.
+#   - Folder structure: Parent folder with a Compass .txt file (containing "Start time = ..." on one line)
+#   - and a RAW subfolder with ROOT files.
 #   - Files:
 #     - psql_credentials.py: Defines PGHOST, PGPORT, PGDATABASE, PGUSER, PGPASSWORD for PostgreSQL.
 #
@@ -26,8 +26,8 @@
 #   - Outputs data to PostgreSQL tables with prefix caen8ch (e.g., caen8ch_ch0).
 #
 # Notes:
-#   - Ensure Google Drive folders are marked "Available Offline" for local usage.
-#   - Database tables must exist with schema: time (timestamp), channels (double precision[]), ps (bigint).
+#   - Ensure Google Drive folders are marked "Available Offline" if used.
+#   - Database tables must exist with schema: time (timestamp(6) for microsecond precision), channels (double precision[]), ps (bigint).
 
 import argparse
 import os
@@ -159,8 +159,10 @@ def process_root_file(file_path, table_prefix, channel_number):
             table_name = get_table_name_from_channel(channel_number, table_prefix)
             event_rows = []
             for abs_time, energy, psp in zip(abs_times, df["Energy"], df["PSP"]):
+                # Convert abs_time to datetime with microsecond precision
+                time_value = datetime.fromtimestamp(abs_time)
+                # Calculate picosecond offset from the floored second
                 time_floor = np.floor(abs_time)
-                time_value = datetime.fromtimestamp(time_floor).strftime('%Y-%m-%d %H:%M:%S')
                 subsecond_ps = int((abs_time - time_floor) * 1e12)
                 event_rows.append((time_value, [float(psp), float(energy)], subsecond_ps))
 
