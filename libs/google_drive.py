@@ -89,31 +89,35 @@ def get_folder_id(parent_folder_id, path):
                 raise Exception(f"Error accessing folder '{part}' in parent ID '{current_folder_id}': {e}")
     return current_folder_id
 
-def save_filenames(folder_id, output_csv='all_files.csv'):
+def get_folder_contents(folder_id, subfolders=False, save_to_csv=False, output_csv='all_files.csv'):
     """
-    List files (excluding folders) inside a Drive folder and save to CSV, showing progress.
+    List files or subfolders inside a Drive folder, with optional CSV saving.
     
     Args:
-        folder_id: The ID of the folder to list files from.
-        output_csv: Path to the output CSV file (default: 'all_files.csv').
+        folder_id (str): The ID of the folder to list contents from.
+        subfolders (bool): If True, list subfolders; if False, list files (default: False).
+        save_to_csv (bool): If True, save results to a CSV file (default: False).
+        output_csv (str): Path to the output CSV file (default: 'all_files.csv').
     
     Returns:
-        None
+        list: A list of file or subfolder names.
     """
     global drive_service
     if drive_service is None:
         initialize_drive_service()
     
+    content_type = "subfolders" if subfolders else "files"
+    mime_type_filter = "mimeType = 'application/vnd.google-apps.folder'" if subfolders else "mimeType != 'application/vnd.google-apps.folder'"
     page_token = None
     batch_count = 0
-    total_files = 0
-    with open(output_csv, 'w') as f:
-        f.write('filename\n')
-    print("Fetching files (excluding folders)...")
+    total_items = 0
+    all_contents = []
+    
+    print(f"Fetching {content_type}...")
     while True:
         try:
             response = drive_service.files().list(
-                q=f"'{folder_id}' in parents and mimeType != 'application/vnd.google-apps.folder' and trashed = false",
+                q=f"'{folder_id}' in parents and {mime_type_filter} and trashed = false",
                 spaces='drive',
                 fields='nextPageToken, files(name)',
                 pageSize=1000,
@@ -123,21 +127,19 @@ def save_filenames(folder_id, output_csv='all_files.csv'):
             ).execute()
             files = response.get('files', [])
             if not files and batch_count == 0 and not page_token:
-                print("No files found in the specified folder.")
+                print(f"No {content_type} found in the specified folder.")
                 break
             batch = [f['name'] for f in files]
             if batch:
-                pd.DataFrame(batch, columns=['filename']).to_csv(
-                    output_csv, mode='a', header=False, index=False
-                )
+                all_contents.extend(batch)
             batch_count += 1
-            total_files += len(batch)
+            total_items += len(batch)
             if files:
-                print(f"Batch {batch_count}: Got {len(batch)} files (Total: {total_files})")
+                print(f"Batch {batch_count}: Got {len(batch)} {content_type} (Total: {total_items})")
             page_token = response.get('nextPageToken')
             if not page_token:
-                if total_files > 0:
-                    print(f"Found {total_files} files.")
+                if total_items > 0:
+                    print(f"Found {total_items} {content_type}.")
                 break
             time.sleep(0.5)
         except (HttpError, RefreshError) as e:
@@ -146,10 +148,19 @@ def save_filenames(folder_id, output_csv='all_files.csv'):
             elif isinstance(e, RefreshError):
                 prompt_for_auth(f"Credential refresh failed: {e}")
             else:
-                raise Exception(f"Error listing files: {e}")
-    if total_files == 0:
-        print("No files found in the specified folder.")
-    return
+                raise Exception(f"Error listing {content_type}: {e}")
+    
+    if total_items == 0:
+        print(f"No {content_type} found in the specified folder.")
+    
+    if save_to_csv and all_contents:
+        header = 'foldername' if subfolders else 'filename'
+        pd.DataFrame(all_contents, columns=[header]).to_csv(
+            output_csv, mode='w', header=True, index=False
+        )
+        print(f"Saved {total_items} {content_type} to {output_csv}.")
+    
+    return all_contents
 
 def wait_for_drive_ready(folder_path, timeout=5, retry_interval=30):
     """
