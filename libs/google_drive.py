@@ -103,7 +103,7 @@ def wait_for_drive_ready(folder_path, timeout=5, retry_interval=30):
         raise SystemExit
     
     print("Warning: This can take several minutes for folders with tens of thousands of files.")
-    print(f"Checking if Google Drive is ready (folder: {os.path.basename(resolved_path)})...")
+    print(f"Checking if Google Drive is ready (folder: {folder_path})...")
     
     def can_list_dir(path, timeout):
         result = Queue()
