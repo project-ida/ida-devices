@@ -91,7 +91,7 @@ def get_folder_id(parent_folder_id, path):
 
 def save_filenames(folder_id, output_csv='all_files.csv'):
     """
-    List files inside a Drive folder and save to CSV, showing progress.
+    List files (excluding folders) inside a Drive folder and save to CSV, showing progress.
     
     Args:
         folder_id: The ID of the folder to list files from.
@@ -109,11 +109,11 @@ def save_filenames(folder_id, output_csv='all_files.csv'):
     total_files = 0
     with open(output_csv, 'w') as f:
         f.write('filename\n')
-    print("Fetching files...")
+    print("Fetching files (excluding folders)...")
     while True:
         try:
             response = drive_service.files().list(
-                q=f"'{folder_id}' in parents and trashed = false",
+                q=f"'{folder_id}' in parents and mimeType != 'application/vnd.google-apps.folder' and trashed = false",
                 spaces='drive',
                 fields='nextPageToken, files(name)',
                 pageSize=1000,
