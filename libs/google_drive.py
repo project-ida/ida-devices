@@ -127,7 +127,6 @@ def get_folder_contents(folder_id, subfolders=False, save_to_csv=False, output_c
             ).execute()
             files = response.get('files', [])
             if not files and batch_count == 0 and not page_token:
-                print(f"No {content_type} found in the specified folder.")
                 break
             batch = [f['name'] for f in files]
             if batch:
