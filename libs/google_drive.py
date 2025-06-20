@@ -109,6 +109,9 @@ def save_filenames(folder_id, output_csv='all_files.csv'):
                 includeItemsFromAllDrives=True
             ).execute()
             files = response.get('files', [])
+            if not files and batch_count == 0 and not page_token:
+                print("No files found in the specified folder.")
+                break
             batch = [f['name'] for f in files]
             if batch:
                 pd.DataFrame(batch, columns=['filename']).to_csv(
@@ -116,9 +119,12 @@ def save_filenames(folder_id, output_csv='all_files.csv'):
                 )
             batch_count += 1
             total_files += len(batch)
-            print(f"Batch {batch_count}: Got {len(batch)} files (Total: {total_files})")
+            if files:
+                print(f"Batch {batch_count}: Got {len(batch)} files (Total: {total_files})")
             page_token = response.get('nextPageToken')
             if not page_token:
+                if total_files > 0:
+                    print(f"Found {total_files} files.")
                 break
             time.sleep(0.5)
         except (HttpError, RefreshError) as e:
@@ -128,7 +134,8 @@ def save_filenames(folder_id, output_csv='all_files.csv'):
                 prompt_for_auth(f"Credential refresh failed: {e}")
             else:
                 raise Exception(f"Error listing files: {e}")
-    print(f"Found {total_files} files.")
+    if total_files == 0:
+        print("No files found in the specified folder.")
     return
 
 def wait_for_drive_ready(folder_path, timeout=5, retry_interval=30):
