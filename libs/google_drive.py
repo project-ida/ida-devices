@@ -1,29 +1,35 @@
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
+from google.auth.exceptions import RefreshError
 import pandas as pd
 import time
 import os
 import threading
 from queue import Queue
 from pathlib import Path
+from google.colab import auth
 
-# Initialize drive_service (will be reinitialized after auth if needed)
+# Initialize drive_service as None
 drive_service = None
 
 def initialize_drive_service():
-    """Initialize or reinitialize the Google Drive service."""
+    """Initialize or reinitialize the Google Drive service after authentication."""
     global drive_service
     try:
+        print("Authenticating user for Google Drive API...")
+        auth.authenticate_user()  # Force Colab authentication
         drive_service = build('drive', 'v3')
+        print("Drive service initialized successfully.")
     except Exception as e:
         print(f"Failed to initialize Drive service: {e}")
-        print("Please run the following command to authenticate:")
+        print("Please run the following command in a new cell to authenticate:")
         print("from google.colab import auth; auth.authenticate_user()")
-        raise
+        raise SystemExit
 
-def prompt_for_auth():
+def prompt_for_auth(error_message):
     """Prompt user to run authentication command."""
-    print("Authentication error detected. Please run the following command in a new cell:")
+    print(f"Authentication error: {error_message}")
+    print("Please run the following command in a new cell to authenticate:")
     print("from google.colab import auth; auth.authenticate_user()")
     print("After authentication, rerun the function.")
     raise SystemExit
@@ -42,6 +48,7 @@ def get_folder_id(parent_folder_id, path):
     Raises:
         Exception: If a folder in the path is not found or authentication fails.
     """
+    global drive_service
     if drive_service is None:
         initialize_drive_service()
     
@@ -60,9 +67,11 @@ def get_folder_id(parent_folder_id, path):
             if not files:
                 raise Exception(f"Folder '{part}' not found in parent folder ID '{current_folder_id}'.")
             current_folder_id = files[0]['id']
-        except HttpError as e:
-            if e.resp.status in [401, 403]:  # Unauthorized or Forbidden
-                prompt_for_auth()
+        except (HttpError, RefreshError) as e:
+            if isinstance(e, HttpError) and e.resp.status in [401, 403]:  # Unauthorized or Forbidden
+                prompt_for_auth(f"HTTP Error {e.resp.status}: {e}")
+            elif isinstance(e, RefreshError):
+                prompt_for_auth(f"Credential refresh failed: {e}")
             else:
                 raise Exception(f"Error accessing folder '{part}': {e}")
     return current_folder_id
@@ -78,6 +87,7 @@ def save_filenames(folder_id, output_csv='all_files.csv'):
     Returns:
         None
     """
+    global drive_service
     if drive_service is None:
         initialize_drive_service()
     
@@ -111,9 +121,11 @@ def save_filenames(folder_id, output_csv='all_files.csv'):
             if not page_token:
                 break
             time.sleep(0.5)
-        except HttpError as e:
-            if e.resp.status in [401, 403]:  # Unauthorized or Forbidden
-                prompt_for_auth()
+        except (HttpError, RefreshError) as e:
+            if isinstance(e, HttpError) and e.resp.status in [401, 403]:  # Unauthorized or Forbidden
+                prompt_for_auth(f"HTTP Error {e.resp.status}: {e}")
+            elif isinstance(e, RefreshError):
+                prompt_for_auth(f"Credential refresh failed: {e}")
             else:
                 raise Exception(f"Error listing files: {e}")
     print(f"Found {total_files} files.")
