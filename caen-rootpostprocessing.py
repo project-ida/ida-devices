@@ -2,14 +2,14 @@
 #
 # Purpose:
 #   Processes ROOT files from a nuclear physics experiment to extract event timestamps,
-#   energy, and PSP, storing them in a PostgreSQL database. Stores energy and PSP as
-#   separate columns in a single table per channel. Keeps track of processed files in a CSV to
-#   avoid reprocessing.
+#   energy, and PSP, storing them in a PostgreSQL database. Stores PSP and energy as
+#   a double precision array [psp, energy] in the channels column in a single table per channel.
+#   Keeps track of processed files in a CSV to avoid reprocessing.
 #
 # Functionality:
 #   - Reads ROOT files from a RAW folder, matching a user-specified channel pattern (e.g., _CH0@).
 #   - Extracts timestamps, energy, and energy-short from ROOT trees, computing PSP.
-#   - Inserts timestamps with picosecond precision, energy, and PSP into database tables
+#   - Inserts timestamps with picosecond precision and [psp, energy] into database tables
 #     (e.g., caen8ch_ch0, caen8ch_ch1).
 #   - Keeps track of processed files in processed_files.csv and skips already processed files.
 #
@@ -27,8 +27,7 @@
 #
 # Notes:
 #   - Ensure Google Drive folders are marked "Available Offline" for local usage.
-#   - Database tables must exist with schema: time (timestamp), energy (double precision), psp (double precision), ps (bigint).
-
+#   - Database tables must exist with schema: time (timestamp), channels (double precision[]), ps (bigint).
 
 import argparse
 import os
@@ -57,20 +56,20 @@ def connect_to_db():
     return conn
 
 # Function to insert event timestamps with picosecond precision
-def insert_timestamps_to_db(conn, table_name, time_value, energy, psp, ps):
+def insert_timestamps_to_db(conn, table_name, time_value, channels, ps):
     with conn.cursor() as cur:
         query = f"""
-            INSERT INTO {table_name} (time, energy, psp, ps)
-            VALUES (%s, %s, %s, %s)
+            INSERT INTO {table_name} (time, channels, ps)
+            VALUES (%s, %s::double precision[], %s)
         """
-        cur.execute(query, (time_value, energy, psp, ps))
+        cur.execute(query, (time_value, channels, ps))
     conn.commit()
 
 # Batched insert many timestamp events with picosecond precision
 def insert_many_timestamps_to_db(conn, table_name, rows, batch_size=1000):
     with conn.cursor() as cur:
         query = f"""
-            INSERT INTO {table_name} (time, energy, psp, ps)
+            INSERT INTO {table_name} (time, channels, ps)
             VALUES %s
         """
         for i in range(0, len(rows), batch_size):
@@ -163,7 +162,7 @@ def process_root_file(file_path, table_prefix, channel_number):
                 time_floor = np.floor(abs_time)
                 time_value = datetime.fromtimestamp(time_floor).strftime('%Y-%m-%d %H:%M:%S')
                 subsecond_ps = int((abs_time - time_floor) * 1e12)
-                event_rows.append((time_value, float(energy), float(psp), subsecond_ps))
+                event_rows.append((time_value, [float(psp), float(energy)], subsecond_ps))
 
             insert_many_timestamps_to_db(conn, table_name, event_rows)
             print("Inserted event data into database")
