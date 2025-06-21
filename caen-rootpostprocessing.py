@@ -41,8 +41,23 @@ import numpy as np
 from pathlib import Path
 import glob
 
+# Detect if running in Colab
+IS_COLAB = 'google.colab' in sys.modules
+
 # PostgreSQL connection details (replace with your credentials)
 from psql_credentials import PGHOST, PGPORT, PGDATABASE, PGUSER, PGPASSWORD
+
+# Dynamically set CSV path with override capability
+if IS_COLAB:
+    # Default CSV path
+    csv_path = '/content/drive/MyDrive/Nucleonics/Colab Notebooks/Data/processed_files.csv'
+    # Check if csv_path is overridden in the global namespace
+    if 'processed_files_path' in globals():
+        csv_path = globals()['processed_files_path']
+else:
+    # Locally, use the script's directory
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    csv_path = os.path.join(script_dir, 'processed_files.csv')
 
 # Connect to PostgreSQL database
 def connect_to_db():
@@ -184,7 +199,6 @@ def main():
     args = parser.parse_args()
 
     table_prefix = "caen8ch"  # Default table prefix
-    csv_path = "processed_files.csv"
     default_channel = 0  # Default channel number
 
     # Check if CSV exists
