@@ -41,8 +41,8 @@ import numpy as np
 from pathlib import Path
 import glob
 
-# Detect if running in Colab
-IS_COLAB = 'google.colab' in sys.modules
+# Detect if running in Colab using environment variable
+IS_COLAB = os.getenv("RUNNING_IN_COLAB") == "1"
 
 # PostgreSQL connection details (replace with your credentials)
 from psql_credentials import PGHOST, PGPORT, PGDATABASE, PGUSER, PGPASSWORD
@@ -54,6 +54,7 @@ if IS_COLAB:
     # Check if csv_path is overridden in the global namespace
     if 'processed_files_path' in globals():
         csv_path = globals()['processed_files_path']
+    print(f"Going to track progress with: {csv_path}")
 else:
     # Locally, use the script's directory
     script_dir = os.path.dirname(os.path.abspath(__file__))
