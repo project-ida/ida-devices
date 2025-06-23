@@ -150,6 +150,7 @@ def process_root_file(file_path, table_prefix, channel_number):
         # Get acquisition start time from .txt file in parent folder
         parent_folder = os.path.dirname(os.path.dirname(file_path))  # Parent of RAW
         acquisition_start_timestamp = get_acquisition_start_from_txt(parent_folder)
+        print(f"Experiment start time: {acquisition_start_timestamp}")
 
         # Open ROOT file
         with uproot.open(file_path) as file:
@@ -167,6 +168,7 @@ def process_root_file(file_path, table_prefix, channel_number):
 
             # Connect to database
             conn = connect_to_db()
+            print("Connection to db established")
 
             # Process all events
             abs_times = df["Timestamp"] + acquisition_start_timestamp
@@ -182,8 +184,9 @@ def process_root_file(file_path, table_prefix, channel_number):
                 subsecond_ps = int((abs_time - time_floor) * 1e12)
                 event_rows.append((time_value, [float(psp), float(energy)], subsecond_ps))
 
+            print("Begin database insertion")
             insert_many_timestamps_to_db(conn, table_name, event_rows)
-            print("Inserted event data into database")
+            print("Finished database insertion")
 
             conn.close()
             print(f"Done")
