@@ -51,7 +51,7 @@ from psql_credentials import PGHOST, PGPORT, PGDATABASE, PGUSER, PGPASSWORD
 if IS_COLAB:
     # Default CSV path
     csv_path = '/content/drive/MyDrive/Nucleonics/Colab Notebooks/Data/processed_files.csv'
-    # Check if csv_path is overridden in the global namespace
+    # Check if csv_path is overridden in the global namespace by looking for processed_files_path
     if 'processed_files_path' in globals():
         csv_path = globals()['processed_files_path']
     print(f"Going to track progress with: {csv_path}")
