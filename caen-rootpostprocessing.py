@@ -293,7 +293,7 @@ def main():
             current_file_number = index + 1
             if os.path.exists(file_path):
                 print(f"Processing file {current_file_number} out of {total_files}: {os.path.basename(file_path)}")
-                print(f"Experiment start time: {acquisition_start_timestamp.strftime('%Y-%m-%d %H:%M:%S')}")
+                print(f"Experiment start time: {datetime.fromtimestamp(acquisition_start_timestamp).strftime('%Y-%m-%d %H:%M:%S')}")
                 success = process_root_file(file_path, table_prefix, channel_input,acquisition_start_timestamp)
                 if success:
                     df.at[index, 'processed'] = True
