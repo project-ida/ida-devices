@@ -123,6 +123,20 @@ def get_file_number(filename):
     match = re.search(r'_(\d+)\.root', filename)
     return int(match.group(1)) if match else 0
 
+def get_acquisition_start(df):
+    file_path = df.iloc[0]['filename']
+    if not os.path.exists(file_path):
+        print(f"Error: The file {file_path} does not exist. Please check the path.")
+        sys.exit(1)
+    parent_folder = os.path.dirname(os.path.dirname(file_path))
+    try:
+        acquisition_start_timestamp = get_acquisition_start_from_txt(parent_folder)
+        print(f"Experiment start time: {acquisition_start_timestamp}")
+        return acquisition_start_timestamp
+    except Exception as e:
+        print(f"Error retrieving experiment start time: {e}")
+        sys.exit(1)
+
 # Function to extract acquisition start time from .txt file
 def get_acquisition_start_from_txt(folder_path):
     try:
@@ -156,15 +170,8 @@ def get_acquisition_start_from_txt(folder_path):
         raise
 
 # Function to process a single ROOT file
-def process_root_file(file_path, table_prefix, channel_number):
+def process_root_file(file_path, table_prefix, channel_number, acquisition_start_timestamp):
     try:
-        print(f"Processing Channel: {channel_number}")
-
-        # Get acquisition start time from .txt file in parent folder
-        parent_folder = os.path.dirname(os.path.dirname(file_path))  # Parent of RAW
-        acquisition_start_timestamp = get_acquisition_start_from_txt(parent_folder)
-        print(f"Experiment start time: {acquisition_start_timestamp}")
-
         # Open ROOT file
         with uproot.open(file_path) as file:
             tree = file["Data_R"]
@@ -276,6 +283,9 @@ def main():
         print(f"Found {total_files} files to process. Created CSV: {csv_path}")
         print()
 
+    # Get experiment start time (needed because ROOT timestamps are relative to the start of the experiment) 
+    acquisition_start_timestamp = get_acquisition_start(df)
+
     # Process unprocessed files
     total_files = len(df)
     for index, row in df.iterrows():
@@ -284,7 +294,7 @@ def main():
             current_file_number = index + 1
             if os.path.exists(file_path):
                 print(f"Processing file {current_file_number} out of {total_files}: {os.path.basename(file_path)}")
-                success = process_root_file(file_path, table_prefix, channel_input)
+                success = process_root_file(file_path, table_prefix, channel_input,acquisition_start_timestamp)
                 if success:
                     df.at[index, 'processed'] = True
                     df.to_csv(csv_path, index=False)
