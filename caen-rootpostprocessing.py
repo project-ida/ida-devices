@@ -131,7 +131,6 @@ def get_acquisition_start(df):
     parent_folder = os.path.dirname(os.path.dirname(file_path))
     try:
         acquisition_start_timestamp = get_acquisition_start_from_txt(parent_folder)
-        print(f"Experiment start time: {acquisition_start_timestamp}")
         return acquisition_start_timestamp
     except Exception as e:
         print(f"Error retrieving experiment start time: {e}")
@@ -294,6 +293,7 @@ def main():
             current_file_number = index + 1
             if os.path.exists(file_path):
                 print(f"Processing file {current_file_number} out of {total_files}: {os.path.basename(file_path)}")
+                print(f"Experiment start time: {acquisition_start_timestamp.strftime('%Y-%m-%d %H:%M:%S')}")
                 success = process_root_file(file_path, table_prefix, channel_input,acquisition_start_timestamp)
                 if success:
                     df.at[index, 'processed'] = True
