@@ -277,42 +277,43 @@ def main():
         print(f"Found {total_files} files to process. Created CSV: {csv_path}")
         print()
 
-    # Get experiment start time (needed because ROOT timestamps are relative to the start of the experiment) 
-    acquisition_start_timestamp = get_acquisition_start(df)
-
     # Get the conn
     conn = connect_to_db()
     print("Connection to db established")
 
-    # Process unprocessed files
-    total_files = len(df)
-    for index, row in df.iterrows():
-        if not row['processed']:
-            file_path = row['filename']
-            current_file_number = index + 1
-            try:
-                with conn.cursor() as cur:
-                    cur.execute("SELECT 1;")  # Simple heartbeat
-            except (psycopg2.OperationalError, psycopg2.InterfaceError) as e:
-                print(f"Database connection lost: {e}. Retrying in 5 seconds...")
-                time.sleep(5)
-                conn = connect_to_db()
+    try:
+        # Get experiment start time (needed because ROOT timestamps are relative to the start of the experiment) 
+        acquisition_start_timestamp = get_acquisition_start(df)
+
+        # Process unprocessed files
+        total_files = len(df)
+        for index, row in df.iterrows():
+            if not row['processed']:
+                file_path = row['filename']
+                current_file_number = index + 1
+                try:
+                    with conn.cursor() as cur:
+                        cur.execute("SELECT 1;")  # Simple heartbeat
+                except (psycopg2.OperationalError, psycopg2.InterfaceError) as e:
+                    print(f"Database connection lost: {e}. Retrying in 5 seconds...")
+                    time.sleep(5)
+                    conn = connect_to_db()
         
-            if os.path.exists(file_path):
-                print(f"Processing file {current_file_number} out of {total_files}: {os.path.basename(file_path)}")
-                print(f"Experiment start time: {datetime.fromtimestamp(acquisition_start_timestamp).strftime('%Y-%m-%d %H:%M:%S')}")
-                success = process_root_file(file_path, table_prefix, channel_input,acquisition_start_timestamp, conn)
-                if success:
+                if os.path.exists(file_path):
+                    print(f"Processing file {current_file_number} out of {total_files}: {os.path.basename(file_path)}")
+                    print(f"Experiment start time: {datetime.fromtimestamp(acquisition_start_timestamp).strftime('%Y-%m-%d %H:%M:%S')}")
+                    success = process_root_file(file_path, table_prefix, channel_input, acquisition_start_timestamp, conn)
+                    if success:
+                        df.at[index, 'processed'] = True
+                        df.to_csv(csv_path, index=False)
+                        print()
+                else:
+                    print(f"File not found: {file_path}")
                     df.at[index, 'processed'] = True
                     df.to_csv(csv_path, index=False)
-                    print()
-            else:
-                print(f"File not found: {file_path}")
-                df.at[index, 'processed'] = True
-                df.to_csv(csv_path, index=False)
-
-    conn.close()
-    print("Processing complete")
+    finally:
+        conn.close()
+        print("Processing complete")
 
 if __name__ == "__main__":
     main()
