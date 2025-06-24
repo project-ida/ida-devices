@@ -313,7 +313,7 @@ def main():
                     df.to_csv(csv_path, index=False)
     finally:
         conn.close()
-        print("Processing complete")
+        print("Connection closed")
 
 if __name__ == "__main__":
     main()
