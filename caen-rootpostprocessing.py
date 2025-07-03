@@ -1,33 +1,42 @@
 # caen-rootpostprocessing.py
 #
 # Purpose:
-#   Processes ROOT files from a nuclear physics experiment to extract event timestamps,
-#   energy, and PSP, storing them in a PostgreSQL database. Stores PSP and energy as
-#   a double precision array [psp, energy] in the channels column in a single table per channel.
-#   Keeps track of processed files in a CSV to avoid reprocessing.
+#   Processes ROOT files from a nuclear physics experiment to extract per-event timestamps,
+#   energy, and PSP values, and inserts them into a PostgreSQL database.
 #
-# Functionality:
-#   - Reads ROOT files from a RAW folder, matching a user-specified channel pattern (e.g., _CH0@).
-#   - Extracts timestamps, energy, and energy from ROOT trees, computing PSP.
-#   - Inserts timestamps with microsecond precision in the time column and stores the sub-second offset with picosecond precision in the ps column, along with [psp, energy] in the channels column, into database tables
-#     (e.g., caen8ch_ch0, caen8ch_ch1).
-#   - Keeps track of processed files in processed_files.csv and skips already processed files.
+# Summary:
+#   - Reads ROOT files in a RAW subdirectory based on a user-specified digitizer channel (e.g., CH0).
+#   - Uses the Compass acquisition "Start time" from a companion .txt file to calculate absolute event timestamps.
+#   - Computes PSP = (Energy - EnergyShort) / Energy for each event.
+#   - Writes each event into a PostgreSQL table named like `caen8ch_ch0`, storing:
+#       - `time` (timestamp with microsecond precision),
+#       - `channels` (double precision array of [PSP, Energy]),
+#       - `ps` (picosecond offset from floored second).
+#   - Tracks processed ROOT files using a CSV (`processed_files.csv`) to avoid duplicates.
 #
-# Requirements:
-#   - Folder structure: Parent folder with a Compass .txt file (containing "Start time = ..." on one line)
-#   - and a RAW subfolder with ROOT files.
-#   - Files:
-#     - psql_credentials.py: Defines PGHOST, PGPORT, PGDATABASE, PGUSER, PGPASSWORD for PostgreSQL.
+# Folder Structure Required:
+#   Parent folder containing:
+#     - A Compass .txt metadata file with a "Start time = ..." line on the second line.
+#     - A `RAW/` subfolder with ROOT files (e.g., *_CH0@*.root).
+#
+# Files Required:
+#   - `psql_credentials.py`: Defines PostgreSQL access variables: PGHOST, PGPORT, PGDATABASE, PGUSER, PGPASSWORD.
 #
 # Usage:
 #   - Run: python caen-rootpostprocessing.py
-#   - Prompts for folder path and channel number (default 0).
-#   - Creates processed_files.csv to track progress.
-#   - Outputs data to PostgreSQL tables with prefix caen8ch (e.g., caen8ch_ch0).
+#   - Prompts for table prefix (caen4ch or caen8ch) and ROOT channel number.
+#   - If `processed_files.csv` already exists, resumes from where it left off.
+#   - Otherwise, creates a new CSV list of matching ROOT files in the RAW folder.
 #
 # Notes:
-#   - Ensure Google Drive folders are marked "Available Offline" if used.
-#   - Database tables must exist with schema: time (timestamp(6) for microsecond precision), channels (double precision[]), ps (bigint).
+#   - All event times are stored with microsecond accuracy and separate picosecond offsets.
+#   - Designed for use both locally and in Google Colab (when RUNNING_IN_COLAB=1 is set).
+#   - If using Google Drive, ensure files are marked "Available Offline" in Finder for access.
+#   - Database tables must already exist with schema:
+#       - `time` (timestamp(6)),
+#       - `channels` (double precision[]),
+#       - `ps` (bigint).
+
 
 import argparse
 import os
