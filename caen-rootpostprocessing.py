@@ -216,7 +216,14 @@ def main():
     parser = argparse.ArgumentParser(description="Process ROOT files for all events")
     args = parser.parse_args()
 
-    table_prefix = "caen8ch"  # Default table prefix
+    # Prompt for table prefix
+    while True:
+        channel_count = input("Enter digitizer channel capacity (4 or 8) for table prefix (caen4ch or caen8ch): ").strip()
+        if channel_count in ['4', '8']:
+            table_prefix = f"caen{channel_count}ch"
+            break
+        print("Invalid input. Please enter '4' or '8'.")
+
     default_channel = 0  # Default channel number
 
     # Check if CSV exists
