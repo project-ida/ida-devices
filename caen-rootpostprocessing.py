@@ -249,6 +249,14 @@ def main():
         channel_input = get_channel_number_from_filename(df.iloc[0]['filename']) # use the first file in the CSV to determine channel number
         print(f"Found {total_files} files in {csv_path}, {unprocessed_files} remain to be processed.")
         print()
+
+    if unprocessed_files == 0:
+        print("✅ All files in processed_files.csv have already been processed.")
+        print("🗑️  If you want to start a new processing run, please delete the CSV file:")
+        print(f"    {csv_path}")
+        print("Then re-run this script to select a new folder and channel.")
+        return
+    
     else:
         # Prompt for folder and channel number
         folder_path = input("Enter the folder path containing the Compass .txt file (ROOT files in RAW subfolder): ")
