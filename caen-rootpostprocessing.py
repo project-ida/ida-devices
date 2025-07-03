@@ -173,46 +173,56 @@ def process_root_file(file_path, table_prefix, channel_number, acquisition_start
         branches_to_import = ["Timestamp", "Energy", "EnergyShort"]
         table_name = get_table_name_from_channel(channel_number, table_prefix)
         total_events = 0
+        chunk_number = 0
 
-        print(f"Streaming events from {os.path.basename(file_path)}")
+        print(f"🔄 Streaming events from {os.path.basename(file_path)}")
 
-        # Iterate through the ROOT tree in ~100MB chunks (you can reduce this if memory is still tight)
         for chunk in uproot.iterate(
             f"{file_path}:Data_R",
             branches=branches_to_import,
-            library="pd",
+            library="np",
             step_size="100 MB"
         ):
-            if chunk.empty:
+            chunk_number += 1
+
+            if len(chunk["Timestamp"]) == 0:
+                print(f"⚠️  Chunk {chunk_number} is empty. Skipping.")
                 continue
 
-            # Compute PSP and adjust timestamp
-            chunk["PSP"] = (chunk["Energy"] - chunk["EnergyShort"]) / chunk["Energy"]
-            chunk["Timestamp"] = chunk["Timestamp"] / 1e12
-            abs_times = chunk["Timestamp"] + acquisition_start_timestamp
+            timestamps = chunk["Timestamp"] / 1e12
+            energy = chunk["Energy"]
+            energy_short = chunk["EnergyShort"]
+
+            # PSP calculation with divide-by-zero protection
+            with np.errstate(divide='ignore', invalid='ignore'):
+                psp = np.where(energy != 0, (energy - energy_short) / energy, 0.0)
+
+            abs_times = timestamps + acquisition_start_timestamp
 
             event_rows = []
-            for abs_time, energy, psp in zip(abs_times, chunk["Energy"], chunk["PSP"]):
+            for abs_time, e, p in zip(abs_times, energy, psp):
                 time_value = datetime.fromtimestamp(abs_time)
                 time_floor = np.floor(abs_time)
                 subsecond_ps = int((abs_time - time_floor) * 1e12)
-                event_rows.append((time_value, [float(psp), float(energy)], subsecond_ps))
+                event_rows.append((time_value, [float(p), float(e)], subsecond_ps))
 
+            insert_many_timestamps_to_db(conn, table_name, event_rows, batch_size=1000)
             total_events += len(event_rows)
 
-            # Insert this chunk into the database
-            insert_many_timestamps_to_db(conn, table_name, event_rows, batch_size=1000)
+            print(f"✅ Chunk {chunk_number}: inserted {len(event_rows)} events (total: {total_events})")
 
         if total_events == 0:
-            print(f"No events found in {file_path}")
+            print(f"⚠️  No events found in {file_path}")
             return False
 
-        print(f"✅ Finished inserting {total_events} events from {os.path.basename(file_path)}")
+        print(f"🎉 Done: inserted {total_events} events from {os.path.basename(file_path)}")
         return True
 
     except Exception as e:
         print(f"❌ Failed to process {file_path}: {e}")
         return False
+
+
 
 
 # Main function
