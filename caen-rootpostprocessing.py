@@ -1,42 +1,33 @@
 # caen-rootpostprocessing.py
 #
 # Purpose:
-#   Processes ROOT files from a nuclear physics experiment to extract per-event timestamps,
-#   energy, and PSP values, and inserts them into a PostgreSQL database.
+#   Processes ROOT files from a nuclear physics experiment to extract event timestamps,
+#   energy, and PSP, storing them in a PostgreSQL database. Stores PSP and energy as
+#   a double precision array [psp, energy] in the channels column in a single table per channel.
+#   Keeps track of processed files in a CSV to avoid reprocessing.
 #
-# Summary:
-#   - Reads ROOT files in a RAW subdirectory based on a user-specified digitizer channel (e.g., CH0).
-#   - Uses the Compass acquisition "Start time" from a companion .txt file to calculate absolute event timestamps.
-#   - Computes PSP = (Energy - EnergyShort) / Energy for each event.
-#   - Writes each event into a PostgreSQL table named like `caen8ch_ch0`, storing:
-#       - `time` (timestamp with microsecond precision),
-#       - `channels` (double precision array of [PSP, Energy]),
-#       - `ps` (picosecond offset from floored second).
-#   - Tracks processed ROOT files using a CSV (`processed_files.csv`) to avoid duplicates.
+# Functionality:
+#   - Reads ROOT files from a RAW folder, matching a user-specified channel pattern (e.g., _CH0@).
+#   - Extracts timestamps, energy, and energy from ROOT trees, computing PSP.
+#   - Inserts timestamps with microsecond precision in the time column and stores the sub-second offset with picosecond precision in the ps column, along with [psp, energy] in the channels column, into database tables
+#     (e.g., caen8ch_ch0, caen8ch_ch1).
+#   - Keeps track of processed files in processed_files.csv and skips already processed files.
 #
-# Folder Structure Required:
-#   Parent folder containing:
-#     - A Compass .txt metadata file with a "Start time = ..." line on the second line.
-#     - A `RAW/` subfolder with ROOT files (e.g., *_CH0@*.root).
-#
-# Files Required:
-#   - `psql_credentials.py`: Defines PostgreSQL access variables: PGHOST, PGPORT, PGDATABASE, PGUSER, PGPASSWORD.
+# Requirements:
+#   - Folder structure: Parent folder with a Compass .txt file (containing "Start time = ..." on one line)
+#   - and a RAW subfolder with ROOT files.
+#   - Files:
+#     - psql_credentials.py: Defines PGHOST, PGPORT, PGDATABASE, PGUSER, PGPASSWORD for PostgreSQL.
 #
 # Usage:
 #   - Run: python caen-rootpostprocessing.py
-#   - Prompts for table prefix (caen4ch or caen8ch) and ROOT channel number.
-#   - If `processed_files.csv` already exists, resumes from where it left off.
-#   - Otherwise, creates a new CSV list of matching ROOT files in the RAW folder.
+#   - Prompts for folder path and channel number (default 0).
+#   - Creates processed_files.csv to track progress.
+#   - Outputs data to PostgreSQL tables with prefix caen8ch (e.g., caen8ch_ch0).
 #
 # Notes:
-#   - All event times are stored with microsecond accuracy and separate picosecond offsets.
-#   - Designed for use both locally and in Google Colab (when RUNNING_IN_COLAB=1 is set).
-#   - If using Google Drive, ensure files are marked "Available Offline" in Finder for access.
-#   - Database tables must already exist with schema:
-#       - `time` (timestamp(6)),
-#       - `channels` (double precision[]),
-#       - `ps` (bigint).
-
+#   - Ensure Google Drive folders are marked "Available Offline" if used.
+#   - Database tables must exist with schema: time (timestamp(6) for microsecond precision), channels (double precision[]), ps (bigint).
 
 import argparse
 import os
@@ -177,47 +168,52 @@ def get_acquisition_start_from_txt(folder_path):
         print(f"Error reading acquisition start time from {txt_file}: {e}")
         raise
 
-# Function to process a single ROOT file
 def process_root_file(file_path, table_prefix, channel_number, acquisition_start_timestamp, conn):
     try:
-        # Open ROOT file
-        with uproot.open(file_path) as file:
-            tree = file["Data_R"]
-            timetag = tree["Timestamp"].array(library="np") * 1e-12
-            if len(timetag) == 0:
-                print(f"No data found in {file_path}")
-                return False
+        branches_to_import = ["Timestamp", "Energy", "EnergyShort"]
+        table_name = get_table_name_from_channel(channel_number, table_prefix)
+        total_events = 0
 
-            # Load data
-            branches_to_import = ["Timestamp", "Energy", "EnergyShort"]
-            df = tree.arrays(branches_to_import, library="pd")
-            df["PSP"] = (df['Energy'] - df['EnergyShort']) / df['Energy']
-            df["Timestamp"] = df["Timestamp"] / 1e12
+        print(f"Streaming events from {os.path.basename(file_path)}")
 
-            # Process all events
-            abs_times = df["Timestamp"] + acquisition_start_timestamp
-            print(f"Processing {len(abs_times)} events")
+        # Iterate through the ROOT tree in ~100MB chunks (you can reduce this if memory is still tight)
+        for chunk in uproot.iterate(
+            f"{file_path}:Data_R",
+            branches=branches_to_import,
+            library="pd",
+            step_size="100 MB"
+        ):
+            if chunk.empty:
+                continue
 
-            table_name = get_table_name_from_channel(channel_number, table_prefix)
+            # Compute PSP and adjust timestamp
+            chunk["PSP"] = (chunk["Energy"] - chunk["EnergyShort"]) / chunk["Energy"]
+            chunk["Timestamp"] = chunk["Timestamp"] / 1e12
+            abs_times = chunk["Timestamp"] + acquisition_start_timestamp
+
             event_rows = []
-            for abs_time, energy, psp in zip(abs_times, df["Energy"], df["PSP"]):
-                # Convert abs_time to datetime with microsecond precision
+            for abs_time, energy, psp in zip(abs_times, chunk["Energy"], chunk["PSP"]):
                 time_value = datetime.fromtimestamp(abs_time)
-                # Calculate picosecond offset from the floored second
                 time_floor = np.floor(abs_time)
                 subsecond_ps = int((abs_time - time_floor) * 1e12)
                 event_rows.append((time_value, [float(psp), float(energy)], subsecond_ps))
 
-            print("Begin database insertion")
-            insert_many_timestamps_to_db(conn, table_name, event_rows)
-            print("Finished database insertion")
+            total_events += len(event_rows)
 
-            print(f"Done")
-            return True
+            # Insert this chunk into the database
+            insert_many_timestamps_to_db(conn, table_name, event_rows, batch_size=1000)
+
+        if total_events == 0:
+            print(f"No events found in {file_path}")
+            return False
+
+        print(f"✅ Finished inserting {total_events} events from {os.path.basename(file_path)}")
+        return True
 
     except Exception as e:
-        print(f"Failed to process {file_path}: {e}")
+        print(f"❌ Failed to process {file_path}: {e}")
         return False
+
 
 # Main function
 def main():
@@ -240,17 +236,9 @@ def main():
         df = pd.read_csv(csv_path)
         total_files = len(df)
         unprocessed_files = len(df[~df['processed']])
-        channel_input = get_channel_number_from_filename(df.iloc[0]['filename'])  # use first file to infer channel
-
+        channel_input = get_channel_number_from_filename(df.iloc[0]['filename']) # use the first file in the CSV to determine channel number
         print(f"Found {total_files} files in {csv_path}, {unprocessed_files} remain to be processed.")
         print()
-
-        if unprocessed_files == 0:
-            print("✅ All files in processed_files.csv have already been processed.")
-            print("🗑️  If you want to start a new processing run, please delete the CSV file:")
-            print(f"    {csv_path}")
-            print("Then re-run this script to select a new folder and channel.")
-            return
     else:
         # Prompt for folder and channel number
         folder_path = input("Enter the folder path containing the Compass .txt file (ROOT files in RAW subfolder): ")
