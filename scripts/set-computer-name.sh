@@ -12,8 +12,12 @@ fi
 # Target file
 BASHRC="$HOME/.bashrc"
 
-# Remove any existing COMPUTER_NAME lines
-sed -i '' '/^export COMPUTER_NAME=/d' "$BASHRC"
+if [[ "$OSTYPE" == "darwin"* ]]; then
+  sed -i '' '/^export COMPUTER_NAME=/d' "$BASHRC"  # macOS (BSD sed)
+else
+  sed -i '/^export COMPUTER_NAME=/d' "$BASHRC"     # Linux (GNU sed)
+fi
+
 
 # Ensure the file ends with a newline before appending
 tail -c1 "$BASHRC" | read -r _ || echo >> "$BASHRC"
