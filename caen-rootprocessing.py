@@ -43,8 +43,10 @@ def insert_timestamps_to_db(conn, table_name, time_value, channels, ps):
         cur.execute(query, (time_value, channels, ps))
     conn.commit()
 
-# Function to get the last modified time of the earliest file in the folder
-def get_earliest_file_last_modified_time(folder):
+# Function to get the last modified time of the earliest file in the same subfolder as file_path
+def get_earliest_file_last_modified_time(file_path):
+    # Get the parent subfolder of the modified file
+    folder = os.path.dirname(file_path)
     files = [os.path.join(folder, f) for f in os.listdir(folder) if f.endswith(('.root', '.root2'))]
     if not files:
         raise FileNotFoundError(f"No ROOT files found in {folder}")
@@ -68,14 +70,18 @@ def get_time_span_from_root(file_path):
 
 # Function to estimate the acquisition start time
 def estimate_acquisition_start(file_path):
-    earliest_file, earliest_datetime, earliest_timestamp = get_earliest_file_last_modified_time(data_folder)
-    print(f"Last modified time from earliest file: {earliest_datetime}")
-    time_span_seconds = get_time_span_from_root(earliest_file)
-    if time_span_seconds is None:
+    try:
+        earliest_file, earliest_datetime, earliest_timestamp = get_earliest_file_last_modified_time(file_path)
+        print(f"Last modified time from earliest file: {earliest_datetime}")
+        time_span_seconds = get_time_span_from_root(earliest_file)
+        if time_span_seconds is None:
+            return None
+        acquisition_start_datetime = earliest_datetime - timedelta(seconds=time_span_seconds)
+        acquisition_start_timestamp = earliest_timestamp - time_span_seconds
+        return acquisition_start_datetime, acquisition_start_timestamp
+    except FileNotFoundError as e:
+        print(f"Error: {e}. Cannot estimate acquisition start time.")
         return None
-    acquisition_start_datetime = earliest_datetime - timedelta(seconds=time_span_seconds)
-    acquisition_start_timestamp = earliest_timestamp - time_span_seconds
-    return acquisition_start_datetime, acquisition_start_timestamp
 
 # Function to check if the ROOT file is ready
 def is_root_file_ready(file_path, tree_name='Data_R'):
