@@ -107,7 +107,7 @@ def get_channel_number_from_filename(file_path):
 # Function to process the ROOT file
 def process_root_file(file_path, table_prefix):
     if not is_root_file_ready(file_path):
-        return False
+        return False, None, None
     
     # Extract the channel number
     channel_number = get_channel_number_from_filename(file_path)
@@ -120,7 +120,7 @@ def process_root_file(file_path, table_prefix):
         print(f"--> acquisition_start_datetime: {acquisition_start_datetime}")
         if acquisition_start_timestamp is None:
             print(f"Skipping file {file_path} due to missing acquisition start information.")
-            return False
+            return False, None, None
 
         with uproot.open(file_path) as file:
             tree = file["Data_R"]
@@ -129,7 +129,7 @@ def process_root_file(file_path, table_prefix):
             
             if len(df["Timestamp"]) == 0:
                 print(f"No data found in {file_path}")
-                return False
+                return False, None, None
 
             # Convert timestamps to seconds
             df["Timestamp"] = df["Timestamp"] / 1e12
@@ -139,6 +139,12 @@ def process_root_file(file_path, table_prefix):
             
             # Calculate absolute times
             abs_times = df["Timestamp"] + acquisition_start_timestamp
+
+            # Calculate start and end times for filename
+            start_time = min(abs_times)
+            end_time = max(abs_times)
+            start_time_str = datetime.fromtimestamp(start_time).strftime('%Y%m%d_%H%M%S')
+            end_time_str = datetime.fromtimestamp(end_time).strftime('%Y%m%d_%H%M%S')
 
             conn = connect_to_db()
             total_events = 0
@@ -155,13 +161,13 @@ def process_root_file(file_path, table_prefix):
             conn.close()
             
             print(f"🎉 Done: inserted {total_events} events from {os.path.basename(file_path)}")
-            print(f"current file start time: {datetime.fromtimestamp(min(abs_times)).strftime('%Y-%m-%d %H:%M:%S')}")
-            print(f"current file end time: {datetime.fromtimestamp(max(abs_times)).strftime('%Y-%m-%d %H:%M:%S')}")
-            return True
+            print(f"current file start time: {datetime.fromtimestamp(start_time).strftime('%Y-%m-%d %H:%M:%S')}")
+            print(f"current file end time: {datetime.fromtimestamp(end_time).strftime('%Y-%m-%d %H:%M:%S')}")
+            return True, start_time_str, end_time_str
 
     except Exception as e:
         print(f"Failed to process {file_path}: {e}")
-        return False
+        return False, None, None
 
 # Monitor folder for modified ROOT files
 class ModifiedFileHandler(FileSystemEventHandler):
@@ -173,12 +179,14 @@ class ModifiedFileHandler(FileSystemEventHandler):
                 return  # Skip processing this file
             try:
                 # Attempt to process the file
-                file_processed = process_root_file(file_path, table_prefix)
+                file_processed, start_time_str, end_time_str = process_root_file(file_path, table_prefix)
                 if file_processed:
                     # Mark the file as processed
                     processed_files[file_path] = True
-                    # Rename the file to end with .root2
-                    new_file_path = file_path + "2"
+                    # Rename the file with start and end times and changed from root to root2
+                    original_filename = os.path.basename(file_path)
+                    new_filename = f"{start_time_str}-{end_time_str}_{original_filename[:-5]}.root2"
+                    new_file_path = os.path.join(os.path.dirname(file_path), new_filename)
                     os.rename(file_path, new_file_path)
                     print(f"File renamed to: {new_file_path}")
                     print("-----------END------------")
