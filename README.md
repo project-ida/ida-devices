@@ -44,7 +44,16 @@ Copied from [daqhats](https://github.com/mccdaq/daqhats):
 
    inside the `ida-devices` directory.
 
+4. Set the computer name by running
+
+   ```sh
+   bash scripts/set-computer-name.sh
+   ```
+
+   inside the `ida-devices` directory.
+
 5. Copy `psql_credentials` into the `ida-devices` directory.
+
 
 ## 🧑‍💻 Running software
 
