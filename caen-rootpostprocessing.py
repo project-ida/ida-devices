@@ -177,46 +177,52 @@ def process_root_file(file_path, table_prefix, channel_number, acquisition_start
 
         print(f"🔄 Streaming events from {os.path.basename(file_path)}")
 
-        for chunk in uproot.iterate(
-            f"{file_path}:Data_R",
-            branches=branches_to_import,
-            library="np",
-            step_size="100 MB"
-        ):
-            chunk_number += 1
+        with uproot.open(file_path) as f:
+            tree = next(obj for k, obj in f.items() if isinstance(obj, uproot.behaviors.TTree.TTree))
 
-            if len(chunk["Timestamp"]) == 0:
-                print(f"⚠️  Chunk {chunk_number} is empty. Skipping.")
-                continue
+            total_events = 0
+            chunk_number = 0
 
-            timestamps = chunk["Timestamp"] / 1e12
-            energy = chunk["Energy"]
-            energy_short = chunk["EnergyShort"]
+            for arrays in tree.iterate(
+                branches_to_import,
+                library="np",
+                step_size="100 MB"
+            ):
+                chunk_number += 1
 
-            # PSP calculation with divide-by-zero protection
-            with np.errstate(divide='ignore', invalid='ignore'):
-                psp = np.where(energy != 0, (energy - energy_short) / energy, 0.0)
+                if len(arrays["Timestamp"]) == 0:
+                    print(f"⚠️  Chunk {chunk_number} is empty. Skipping.")
+                    continue
 
-            abs_times = timestamps + acquisition_start_timestamp
+                timestamps = arrays["Timestamp"] / 1e12
+                energy = arrays["Energy"]
+                energy_short = arrays["EnergyShort"]
 
-            event_rows = []
-            for abs_time, e, p in zip(abs_times, energy, psp):
-                time_value = datetime.fromtimestamp(abs_time)
-                time_floor = np.floor(abs_time)
-                subsecond_ps = int((abs_time - time_floor) * 1e12)
-                event_rows.append((time_value, [float(p), float(e)], subsecond_ps))
+                 # PSP calculation with divide-by-zero protection
+                with np.errstate(divide='ignore', invalid='ignore'):
+                    psp = np.where(energy != 0, (energy - energy_short) / energy, 0.0)
 
-            insert_many_timestamps_to_db(conn, table_name, event_rows, batch_size=1000)
-            total_events += len(event_rows)
+                abs_times = timestamps + acquisition_start_timestamp
 
-            print(f"✅ Chunk {chunk_number}: inserted {len(event_rows)} events (total: {total_events})")
+                event_rows = []
+                for abs_time, e, p in zip(abs_times, energy, psp):
+                    time_value = datetime.fromtimestamp(abs_time)
+                    time_floor = np.floor(abs_time)
+                    subsecond_ps = int((abs_time - time_floor) * 1e12)
+                    event_rows.append((time_value, [float(p), float(e)], subsecond_ps))
 
-        if total_events == 0:
-            print(f"⚠️  No events found in {file_path}")
-            return False
+                insert_many_timestamps_to_db(conn, table_name, event_rows, batch_size=1000)
+                total_events += len(event_rows)
 
-        print(f"🎉 Done: inserted {total_events} events from {os.path.basename(file_path)}")
-        return True
+                print(f"✅ Chunk {chunk_number}: inserted {len(event_rows)} events (total: {total_events})")
+
+            if total_events == 0:
+                print(f"⚠️  No events found in {file_path}")
+                return False
+
+            print(f"🎉 Done: inserted {total_events} events from {os.path.basename(file_path)}")
+            return True
+
 
     except Exception as e:
         print(f"❌ Failed to process {file_path}: {e}")
