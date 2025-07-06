@@ -338,6 +338,8 @@ def main():
                         df.to_csv(csv_path, index=False)
                         print("Updated processed status in CSV")
                         print()
+                    else:
+                        exit(1)
                 else:
                     print(f"File not found: {file_path}")
                     df.at[index, 'processed'] = True
