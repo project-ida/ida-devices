@@ -14,6 +14,14 @@ from watchdog.events import FileSystemEventHandler
 parent_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 sys.path.append(parent_dir)
 
+# Get computer name from environment variable or user input
+computer_name = os.getenv("COMPUTER_NAME")
+if not computer_name:
+    print("COMPUTER_NAME environment variable not set.")
+    print("You must run 'bash ida-devices/scripts/set-computer-name.sh' to set it.")
+    exit(1)
+       
+
 # PostgreSQL connection details
 from psql_credentials import PGHOST, PGPORT, PGDATABASE, PGUSER, PGPASSWORD
 
@@ -41,6 +49,16 @@ def insert_timestamps_to_db(conn, table_name, time_value, channels, ps):
             VALUES (%s, %s::double precision[], %s)
         """
         cur.execute(query, (time_value, channels, ps))
+    conn.commit()
+
+# Function to insert event timestamps with picosecond precision
+def insert_root_file_to_db(conn, time_value, computer, subfolder, raw_folder, file):
+    with conn.cursor() as cur:
+        query = f"""
+            INSERT INTO root_files (time, computer, subfolder, raw_folder, file)
+            VALUES (%s, %s, %s, %s, %s)
+        """
+        cur.execute(query, (time_value, computer, subfolder, raw_folder, file))
     conn.commit()
 
 # Function to get the last modified time of the earliest file in the same subfolder as file_path
@@ -157,6 +175,12 @@ def process_root_file(file_path, table_prefix):
                 channels = [float(psp), float(energy)]
                 insert_timestamps_to_db(conn, table_name, time_value, channels, subsecond_ps)
                 total_events += 1
+
+            # Insert root file metadata into the database
+            filename = os.path.basename(file_path)
+            raw_folder = os.path.basename(os.path.dirname(filepath))
+            subfolder = os.path.basename(os.path.dirname(os.path.dirname(filepath)))
+            insert_root_file_to_db(conn, end_time, computer_name, subfolder, raw_folder, filename)
 
             conn.close()
             
