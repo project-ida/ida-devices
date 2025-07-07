@@ -207,7 +207,7 @@ class ModifiedFileHandler(FileSystemEventHandler):
                     filename = os.path.basename(new_file_path)
                     directory = os.path.dirname(new_file_path) # /home/cf/caen/daq/test/RAW
                     dir_components = directory.split(os.sep) # ['home', 'cf', 'caen', 'daq', 'test', 'RAW']
-                    rel_dir = os.path.join(*dir_components[2:])
+                    rel_dir = os.path.join(*dir_components[3:])
                     daq_folder = os.path.basename(os.path.dirname(os.path.dirname(new_file_path))) # test
                     insert_root_file_to_db(conn, end_time_str, computer_name, daq_folder, rel_dir, filename)
                     print(f"Inserted root file meta data into the database")
