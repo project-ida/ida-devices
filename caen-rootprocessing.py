@@ -43,44 +43,26 @@ def insert_timestamps_to_db(conn, table_name, time_value, channels, ps):
         cur.execute(query, (time_value, channels, ps))
     conn.commit()
 
-# Function to get the last modified time of the earliest file in the same subfolder as file_path
-def get_earliest_file_last_modified_time(file_path):
-    # Get the parent subfolder of the modified file
-    folder = os.path.dirname(file_path)
-    files = [os.path.join(folder, f) for f in os.listdir(folder) if f.endswith(('.root', '.root2'))]
-    if not files:
-        raise FileNotFoundError(f"No ROOT files found in {folder}")
-    creation_times = [(file, os.path.getmtime(file)) for file in files]
-    earliest_file, earliest_time = min(creation_times, key=lambda x: x[1])
-    earliest_datetime = datetime.fromtimestamp(earliest_time)
-    return earliest_file, earliest_datetime, earliest_time
-
-# Function to get the time span covered by the ROOT file
-def get_time_span_from_root(file_path):
-    try:
-        with uproot.open(file_path) as file:
-            tree = file["Data_R"]
-            timetag = tree["Timestamp"].array(library="np") * 1e-12
-            start_time_relative = min(timetag)
-            end_time_relative = max(timetag)
-            return end_time_relative - start_time_relative
-    except Exception as e:
-        print(f"Failed to process {file_path}: {e}")
-        return None
-
-# Function to estimate the acquisition start time
+# Function to estimate the acquisition start time from settings.xml last modified time
 def estimate_acquisition_start(file_path):
     try:
-        earliest_file, earliest_datetime, earliest_timestamp = get_earliest_file_last_modified_time(file_path)
-        print(f"Last modified time from earliest file: {earliest_datetime}")
-        time_span_seconds = get_time_span_from_root(earliest_file)
-        if time_span_seconds is None:
+        # Get the parent directory of the file's folder (one folder up)
+        folder = os.path.dirname(file_path)
+        parent_folder = os.path.dirname(folder)
+        settings_file = os.path.join(parent_folder, "settings.xml")
+        
+        if not os.path.exists(settings_file):
+            print(f"Error: settings.xml not found in {parent_folder}")
             return None, None
-        acquisition_start_datetime = earliest_datetime - timedelta(seconds=time_span_seconds)
-        acquisition_start_timestamp = earliest_timestamp - time_span_seconds
+        
+        # Get the last modified time of settings.xml
+        settings_mtime = os.path.getmtime(settings_file)
+        acquisition_start_datetime = datetime.fromtimestamp(settings_mtime)
+        acquisition_start_timestamp = settings_mtime
+        print(f"Last modified time of {settings_file}: {acquisition_start_datetime}")
         return acquisition_start_datetime, acquisition_start_timestamp
-    except FileNotFoundError as e:
-        print(f"Error: {e}. Cannot estimate acquisition start time.")
+    except Exception as e:
+        print(f"Error accessing settings.xml for {file_path}: {e}")
         return None, None
 
 # Function to check if the ROOT file is ready
@@ -119,7 +101,7 @@ def process_root_file(file_path, table_prefix):
         acquisition_start_datetime, acquisition_start_timestamp = estimate_acquisition_start(file_path)
         print(f"--> acquisition_start_datetime: {acquisition_start_datetime}")
         if acquisition_start_timestamp is None:
-            print(f"Skipping file {file_path} due to missing acquisition start information.")
+            print(f"Skipping file {file_path} due to missing settings.xml to extract experiment start time.")
             return False, None, None
 
         with uproot.open(file_path) as file:
