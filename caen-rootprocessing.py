@@ -157,12 +157,6 @@ def process_root_file(file_path, table_prefix):
                 insert_timestamps_to_db(conn, table_name, time_value, channels, subsecond_ps)
                 total_events += 1
 
-            # Insert root file metadata into the database
-            filename = os.path.basename(file_path)
-            raw_folder = os.path.basename(os.path.dirname(file_path))
-            subfolder = os.path.basename(os.path.dirname(os.path.dirname(file_path)))
-            insert_root_file_to_db(conn, end_time, computer_name, subfolder, raw_folder, filename)
-
             conn.close()
             
             print(f"🎉 Done: inserted {total_events} events from {os.path.basename(file_path)}")
@@ -194,6 +188,14 @@ class ModifiedFileHandler(FileSystemEventHandler):
                     new_file_path = os.path.join(os.path.dirname(file_path), new_filename)
                     os.rename(file_path, new_file_path)
                     print(f"File renamed to: {new_file_path}")
+
+                    # Insert root file metadata into the database
+                    filename = os.path.basename(new_file_path)
+                    raw_folder = os.path.basename(os.path.dirname(new_file_path))
+                    subfolder = os.path.basename(os.path.dirname(os.path.dirname(new_file_path)))
+                    insert_root_file_to_db(conn, end_time_str, computer_name, subfolder, raw_folder, filename)
+                    print(f"Inserted root file meta data into the database")
+
                     print("-----------END------------")
             except Exception as e:
                 print(f"Error processing file {file_path}: {e}")
