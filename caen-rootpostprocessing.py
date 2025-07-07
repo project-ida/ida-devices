@@ -239,11 +239,10 @@ def main():
 
     # Prompt for table prefix
     while True:
-        channel_count = input("Enter digitizer channel capacity (4 or 8) for table prefix (caen4ch or caen8ch): ").strip()
-        if channel_count in ['4', '8']:
-            table_prefix = f"caen{channel_count}ch"
+        table_prefix = input("Enter table prefix (e.g., caen8ch): ").strip()
+        if table_prefix:
             break
-        print("Invalid input. Please enter '4' or '8'.")
+        print("Invalid input. Please enter a non-empty table prefix.")
 
     default_channel = 0  # Default channel number
 
