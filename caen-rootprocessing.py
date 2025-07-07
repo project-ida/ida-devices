@@ -64,13 +64,13 @@ def insert_many_timestamps_to_db(conn, table_name, rows, batch_size=1000):
     conn.commit()
 
 # Function to insert event timestamps with picosecond precision
-def insert_root_file_to_db(conn, time_value, computer, subfolder, raw_folder, file):
+def insert_root_file_to_db(conn, time_value, computer, daq_folder, rel_dir, file):
     with conn.cursor() as cur:
         query = f"""
-            INSERT INTO root_files (time, computer, subfolder, raw_folder, file)
+            INSERT INTO root_files (time, computer, daq_folder, dir, file)
             VALUES (%s, %s, %s, %s, %s)
         """
-        cur.execute(query, (time_value, computer, subfolder, raw_folder, file))
+        cur.execute(query, (time_value, computer, daq_folder, rel_dir, file))
     conn.commit()
 
 # Function to estimate the acquisition start time from settings.xml last modified time
@@ -205,9 +205,11 @@ class ModifiedFileHandler(FileSystemEventHandler):
 
                     # Insert root file metadata into the database
                     filename = os.path.basename(new_file_path)
-                    raw_folder = os.path.basename(os.path.dirname(new_file_path))
-                    subfolder = os.path.basename(os.path.dirname(os.path.dirname(new_file_path)))
-                    insert_root_file_to_db(conn, end_time_str, computer_name, subfolder, raw_folder, filename)
+                    directory = os.path.dirname(new_file_path) # /home/cf/caen/daq/test/RAW
+                    dir_components = directory.split(os.sep) # ['home', 'cf', 'caen', 'daq', 'test', 'RAW']
+                    rel_dir = os.path.join(*dir_components[2:])
+                    daq_folder = os.path.basename(os.path.dirname(os.path.dirname(new_file_path))) # test
+                    insert_root_file_to_db(conn, end_time_str, computer_name, daq_folder, rel_dir, filename)
                     print(f"Inserted root file meta data into the database")
 
                     print("-----------END------------")
