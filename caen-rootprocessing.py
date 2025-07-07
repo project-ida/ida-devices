@@ -77,20 +77,6 @@ def estimate_acquisition_start(file_path):
         acquisition_start_datetime = datetime.fromtimestamp(settings_mtime)
         acquisition_start_timestamp = settings_mtime
         print(f"Last modified time of {settings_file}: {acquisition_start_datetime}")
-        # Get the parent directory of the file's folder (one folder up)
-        folder = os.path.dirname(file_path)
-        parent_folder = os.path.dirname(folder)
-        settings_file = os.path.join(parent_folder, "settings.xml")
-        
-        if not os.path.exists(settings_file):
-            print(f"Error: settings.xml not found in {parent_folder}")
-            return None, None
-        
-        # Get the last modified time of settings.xml
-        settings_mtime = os.path.getmtime(settings_file)
-        acquisition_start_datetime = datetime.fromtimestamp(settings_mtime)
-        acquisition_start_timestamp = settings_mtime
-        print(f"Last modified time of {settings_file}: {acquisition_start_datetime}")
         return acquisition_start_datetime, acquisition_start_timestamp
     except Exception as e:
         print(f"Error accessing settings.xml for {file_path}: {e}")
