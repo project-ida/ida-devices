@@ -9,6 +9,7 @@ import time
 from datetime import datetime, timedelta
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
+from psycopg2.extras import execute_values
 
 # Add the parent directory (../) to the Python path
 parent_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
@@ -48,6 +49,18 @@ def insert_timestamps_to_db(conn, table_name, time_value, channels, ps):
             VALUES (%s, %s::double precision[], %s)
         """
         cur.execute(query, (time_value, channels, ps))
+    conn.commit()
+
+# Batched insert many timestamp events with picosecond precision
+def insert_many_timestamps_to_db(conn, table_name, rows, batch_size=1000):
+    with conn.cursor() as cur:
+        query = f"""
+            INSERT INTO {table_name} (time, channels, ps)
+            VALUES %s
+        """
+        for i in range(0, len(rows), batch_size):
+            batch = rows[i:i+batch_size]
+            execute_values(cur, query, batch)
     conn.commit()
 
 # Function to insert event timestamps with picosecond precision
@@ -147,14 +160,17 @@ def process_root_file(file_path, table_prefix, conn):
 
             total_events = 0
 
-            # Insert events
+            # Collect events for batch insertion
+            event_rows = []
             for abs_time, psp, energy in zip(abs_times, df["PSP"], df["Energy"]):
                 time_value = datetime.fromtimestamp(abs_time)
                 time_floor = np.floor(abs_time)
                 subsecond_ps = int((abs_time - time_floor) * 1e12)
-                channels = [float(psp), float(energy)]
-                insert_timestamps_to_db(conn, table_name, time_value, channels, subsecond_ps)
-                total_events += 1
+                event_rows.append((time_value, [float(psp), float(energy)], subsecond_ps))
+
+            # Insert events in batches
+            insert_many_timestamps_to_db(conn, table_name, event_rows, batch_size=1000)
+            total_events += len(event_rows)
             
             print(f"🎉 Done: inserted {total_events} events from {os.path.basename(file_path)}")
             print(f"current file start time: {datetime.fromtimestamp(start_time).strftime('%Y-%m-%d %H:%M:%S')}")
