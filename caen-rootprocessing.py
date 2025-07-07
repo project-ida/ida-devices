@@ -75,13 +75,13 @@ def estimate_acquisition_start(file_path):
         print(f"Last modified time from earliest file: {earliest_datetime}")
         time_span_seconds = get_time_span_from_root(earliest_file)
         if time_span_seconds is None:
-            return None
+            return None, None
         acquisition_start_datetime = earliest_datetime - timedelta(seconds=time_span_seconds)
         acquisition_start_timestamp = earliest_timestamp - time_span_seconds
         return acquisition_start_datetime, acquisition_start_timestamp
     except FileNotFoundError as e:
         print(f"Error: {e}. Cannot estimate acquisition start time.")
-        return None
+        return None, None
 
 # Function to check if the ROOT file is ready
 def is_root_file_ready(file_path, tree_name='Data_R'):
