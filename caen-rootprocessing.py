@@ -159,8 +159,8 @@ def process_root_file(file_path, table_prefix):
 
             # Insert root file metadata into the database
             filename = os.path.basename(file_path)
-            raw_folder = os.path.basename(os.path.dirname(filepath))
-            subfolder = os.path.basename(os.path.dirname(os.path.dirname(filepath)))
+            raw_folder = os.path.basename(os.path.dirname(file_path))
+            subfolder = os.path.basename(os.path.dirname(os.path.dirname(file_path)))
             insert_root_file_to_db(conn, end_time, computer_name, subfolder, raw_folder, filename)
 
             conn.close()
