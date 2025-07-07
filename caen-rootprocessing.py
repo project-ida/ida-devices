@@ -104,7 +104,7 @@ def get_channel_number_from_filename(file_path):
         raise ValueError(f"Could not extract channel number from file name: {file_path}")
 
 # Function to process the ROOT file
-def process_root_file(file_path, table_prefix):
+def process_root_file(file_path, table_prefix, conn):
     if not is_root_file_ready(file_path):
         return False, None, None
     
@@ -145,7 +145,6 @@ def process_root_file(file_path, table_prefix):
             start_time_str = datetime.fromtimestamp(start_time).strftime('%Y%m%d_%H%M%S')
             end_time_str = datetime.fromtimestamp(end_time).strftime('%Y%m%d_%H%M%S')
 
-            conn = connect_to_db()
             total_events = 0
 
             # Insert events
@@ -156,8 +155,6 @@ def process_root_file(file_path, table_prefix):
                 channels = [float(psp), float(energy)]
                 insert_timestamps_to_db(conn, table_name, time_value, channels, subsecond_ps)
                 total_events += 1
-
-            conn.close()
             
             print(f"🎉 Done: inserted {total_events} events from {os.path.basename(file_path)}")
             print(f"current file start time: {datetime.fromtimestamp(start_time).strftime('%Y-%m-%d %H:%M:%S')}")
@@ -177,8 +174,9 @@ class ModifiedFileHandler(FileSystemEventHandler):
                 print(f"Skipping {file_path} because it has already been processed.")
                 return  # Skip processing this file
             try:
+                conn = connect_to_db()
                 # Attempt to process the file
-                file_processed, start_time_str, end_time_str = process_root_file(file_path, table_prefix)
+                file_processed, start_time_str, end_time_str = process_root_file(file_path, table_prefix, conn)
                 if file_processed:
                     # Mark the file as processed
                     processed_files[file_path] = True
@@ -197,6 +195,7 @@ class ModifiedFileHandler(FileSystemEventHandler):
                     print(f"Inserted root file meta data into the database")
 
                     print("-----------END------------")
+                conn.close()
             except Exception as e:
                 print(f"Error processing file {file_path}: {e}")
 
