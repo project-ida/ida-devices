@@ -51,13 +51,6 @@ import time
 # Detect if running in Colab using environment variable
 IS_COLAB = os.getenv("RUNNING_IN_COLAB") == "1"
 
-# Get computer name from environment variable or fallback
-computer_name = os.getenv("COMPUTER_NAME")
-if not computer_name:
-    print("COMPUTER_NAME environment variable not set.")
-    print("You must run 'bash ida-devices/scripts/set-computer-name.sh' to set it or set the environment variable manually.")
-    computer_name = "unknown"  # Fallback to avoid crashing
-
 # PostgreSQL connection details (replace with your credentials)
 from psql_credentials import PGHOST, PGPORT, PGDATABASE, PGUSER, PGPASSWORD
 
@@ -263,6 +256,30 @@ def main():
     parser = argparse.ArgumentParser(description="Process ROOT files for all events")
     args = parser.parse_args()
 
+    # Prompt for whether this is the data collection computer
+    while True:
+        is_collection_computer = input("Is this the computer where the data was collected? (y/n): ").strip().lower()
+        if is_collection_computer in ['y', 'n']:
+            is_collection_computer = is_collection_computer == 'y'
+            break
+        print("Invalid input. Please enter 'y' or 'n'.")
+
+    # Get computer name based on user response
+    global computer_name
+    if is_collection_computer:
+        computer_name = os.getenv("COMPUTER_NAME")
+        if not computer_name:
+            print("Error: COMPUTER_NAME environment variable not set.")
+            print("You must run 'bash ida-devices/scripts/set-computer-name.sh' to set it.")
+            sys.exit(1)
+    else:
+        while True:
+            computer_name = input("Enter the computer name where data was collected: ").strip()
+            if not computer_name:
+                print("Error: Computer name cannot be empty.")
+            else:
+                break
+
     # Prompt for table prefix
     while True:
         table_prefix = input("Enter table prefix (e.g., caen8ch): ").strip()
@@ -407,7 +424,7 @@ def main():
                         print("Updated processed status in CSV")
                         print()
                     else:
-                        exit(1)
+                        sys.exit(1)
                 else:
                     print(f"File not found: {file_path}")
                     df.at[index, 'processed'] = True
