@@ -8,26 +8,31 @@
 #
 # Functionality:
 #   - Reads ROOT files from a RAW folder, matching a user-specified channel pattern (e.g., _CH0@).
-#   - Extracts timestamps, energy, and energy from ROOT trees, computing PSP.
+#   - Extracts timestamps, energy, and energy_short from ROOT trees, computing PSP.
 #   - Inserts timestamps with microsecond precision in the time column and stores the sub-second offset with picosecond precision in the ps column, along with [psp, energy] in the channels column, into database tables
 #     (e.g., caen8ch_ch0, caen8ch_ch1).
+#   - Renames processed files with start and end timestamps and changes extension to .root2.
+#   - Inserts metadata into root_files table after processing.
 #   - Keeps track of processed files in processed_files.csv and skips already processed files.
 #
 # Requirements:
 #   - Folder structure: Parent folder with a Compass .txt file (containing "Start time = ..." on one line)
-#   - and a RAW subfolder with ROOT files.
+#     and a RAW subfolder with ROOT files.
 #   - Files:
 #     - psql_credentials.py: Defines PGHOST, PGPORT, PGDATABASE, PGUSER, PGPASSWORD for PostgreSQL.
+#   - Environment variable COMPUTER_NAME set (e.g., via bash ida-devices/scripts/set-computer-name.sh).
 #
 # Usage:
 #   - Run: python caen-rootpostprocessing.py
-#   - Prompts for folder path and channel number (default 0).
+#   - Prompts for folder path, channel number (default 0), and table prefix (e.g., caen8ch).
 #   - Creates processed_files.csv to track progress.
 #   - Outputs data to PostgreSQL tables with prefix caen8ch (e.g., caen8ch_ch0).
 #
 # Notes:
 #   - Ensure Google Drive folders are marked "Available Offline" if used.
-#   - Database tables must exist with schema: time (timestamp(6) for microsecond precision), channels (double precision[]), ps (bigint).
+#   - Database tables must exist with schema:
+#     - Event tables: time (timestamp(6) for microsecond precision), channels (double precision[]), ps (bigint).
+#     - root_files: time (varchar), computer (varchar), daq_folder (varchar), dir (varchar), file (varchar).
 
 import argparse
 import os
@@ -45,6 +50,13 @@ import time
 
 # Detect if running in Colab using environment variable
 IS_COLAB = os.getenv("RUNNING_IN_COLAB") == "1"
+
+# Get computer name from environment variable or fallback
+computer_name = os.getenv("COMPUTER_NAME")
+if not computer_name:
+    print("COMPUTER_NAME environment variable not set.")
+    print("You must run 'bash ida-devices/scripts/set-computer-name.sh' to set it or set the environment variable manually.")
+    computer_name = "unknown"  # Fallback to avoid crashing
 
 # PostgreSQL connection details (replace with your credentials)
 from psql_credentials import PGHOST, PGPORT, PGDATABASE, PGUSER, PGPASSWORD
@@ -104,6 +116,16 @@ def insert_many_timestamps_to_db(conn, table_name, rows, batch_size=1000):
         for i in range(0, len(rows), batch_size):
             batch = rows[i:i+batch_size]
             execute_values(cur, query, batch)
+    conn.commit()
+
+# Function to insert root file metadata into the database
+def insert_root_file_to_db(conn, time_value, computer, daq_folder, rel_dir, file):
+    with conn.cursor() as cur:
+        query = f"""
+            INSERT INTO root_files (time, computer, daq_folder, dir, file)
+            VALUES (%s, %s, %s, %s, %s)
+        """
+        cur.execute(query, (time_value, computer, daq_folder, rel_dir, file))
     conn.commit()
 
 # Function to get the table name based on channel number
@@ -218,18 +240,22 @@ def process_root_file(file_path, table_prefix, channel_number, acquisition_start
 
             if total_events == 0:
                 print(f"⚠️  No events found in {file_path}")
-                return False
+                return False, None, None
+
+            # Calculate start and end times for renaming
+            start_time = min(abs_times)
+            end_time = max(abs_times)
+            start_time_str = datetime.fromtimestamp(start_time).strftime('%Y%m%d_%H%M%S')
+            end_time_str = datetime.fromtimestamp(end_time).strftime('%Y%m%d_%H%M%S')
 
             print(f"🎉 Done: inserted {total_events} events from {os.path.basename(file_path)}")
-            return True
-
+            print(f"current file start time: {datetime.fromtimestamp(start_time).strftime('%Y-%m-%d %H:%M:%S')}")
+            print(f"current file end time: {datetime.fromtimestamp(end_time).strftime('%Y-%m-%d %H:%M:%S')}")
+            return True, start_time_str, end_time_str
 
     except Exception as e:
         print(f"❌ Failed to process {file_path}: {e}")
-        return False
-
-
-
+        return False, None, None
 
 # Main function
 def main():
@@ -337,8 +363,30 @@ def main():
                 if os.path.exists(file_path):
                     print(f"Processing file {current_file_number} out of {total_files}: {os.path.basename(file_path)}")
                     print(f"Experiment start time: {datetime.fromtimestamp(acquisition_start_timestamp).strftime('%Y-%m-%d %H:%M:%S')}")
-                    success = process_root_file(file_path, table_prefix, channel_input, acquisition_start_timestamp, conn)
+                    success, start_time_str, end_time_str = process_root_file(file_path, table_prefix, channel_input, acquisition_start_timestamp, conn)
                     if success:
+                        # Rename the file with start and end times and change from .root to .root2
+                        original_filename = os.path.basename(file_path)
+                        new_filename = f"{start_time_str}-{end_time_str}_{original_filename[:-5]}.root2"
+                        new_file_path = os.path.join(os.path.dirname(file_path), new_filename)
+                        try:
+                            os.rename(file_path, new_file_path)
+                            print(f"File renamed to: {new_file_path}")
+                        except OSError as e:
+                            print(f"Failed to rename {file_path} to {new_file_path}: {e}")
+                            continue
+
+                        # Insert root file metadata into the database
+                        filename = os.path.basename(new_file_path)
+                        directory = os.path.dirname(new_file_path)
+                        dir_components = directory.split(os.sep)
+                        rel_dir = os.path.join(*dir_components[3:])
+                        daq_folder = os.path.basename(os.path.dirname(os.path.dirname(new_file_path)))
+                        insert_root_file_to_db(conn, end_time_str, computer_name, daq_folder, rel_dir, filename)
+                        print(f"Inserted root file metadata into the database")
+
+                        # Update DataFrame with new file path
+                        df.at[index, 'filename'] = new_file_path
                         df.at[index, 'processed'] = True
                         df.to_csv(csv_path, index=False)
                         print("Updated processed status in CSV")
