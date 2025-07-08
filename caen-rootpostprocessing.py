@@ -11,8 +11,8 @@
 #   - Extracts timestamps, energy, and energy_short from ROOT trees, computing PSP.
 #   - Inserts timestamps with microsecond precision in the time column and stores the sub-second offset with picosecond precision in the ps column, along with [psp, energy] in the channels column, into database tables
 #     (e.g., caen8ch_ch0, caen8ch_ch1).
-#   - Renames processed files with start and end timestamps and changes extension to .root2.
-#   - Inserts metadata into root_files table after processing.
+#   - Optionally renames processed files with start and end timestamps and changes extension to .root2.
+#   - Inserts metadata into root_files table after processing, using original or renamed filename.
 #   - Keeps track of processed files in processed_files.csv and skips already processed files.
 #
 # Requirements:
@@ -20,11 +20,11 @@
 #     and a RAW subfolder with ROOT files.
 #   - Files:
 #     - psql_credentials.py: Defines PGHOST, PGPORT, PGDATABASE, PGUSER, PGPASSWORD for PostgreSQL.
-#   - Environment variable COMPUTER_NAME set (e.g., via bash ida-devices/scripts/set-computer-name.sh).
+#   - Environment variable COMPUTER_NAME set if post-processing on the data collection computer.
 #
 # Usage:
 #   - Run: python caen-rootpostprocessing.py
-#   - Prompts for folder path, channel number (default 0), and table prefix (e.g., caen8ch).
+#   - Prompts for folder path, channel number (default 0), table prefix (e.g., caen8ch), computer name (if COMPUTER_NAME not set), and whether to rename files.
 #   - Creates processed_files.csv to track progress.
 #   - Outputs data to PostgreSQL tables with prefix caen8ch (e.g., caen8ch_ch0).
 #
@@ -270,6 +270,14 @@ def main():
             break
         print("Invalid input. Please enter a non-empty table prefix.")
 
+    # Prompt for whether to rename files
+    while True:
+        rename_files = input("Rename processed files to include start and end timestamps? (y/n): ").strip().lower()
+        if rename_files in ['y', 'n']:
+            rename_files = rename_files == 'y'
+            break
+        print("Invalid input. Please enter 'y' or 'n'.")
+
     default_channel = 0  # Default channel number
 
     # Check if CSV exists
@@ -277,7 +285,11 @@ def main():
         df = pd.read_csv(csv_path)
         total_files = len(df)
         unprocessed_files = len(df[~df['processed']])
-        channel_input = get_channel_number_from_filename(df.iloc[0]['filename']) # use the first file in the CSV to determine channel number
+        try:
+            channel_input = get_channel_number_from_filename(df.iloc[0]['filename'])
+        except ValueError as e:
+            print(f"Error with CSV file: {e}")
+            sys.exit(1)
         print(f"Found {total_files} files in {csv_path}, {unprocessed_files} remain to be processed.")
         print()
 
@@ -365,19 +377,22 @@ def main():
                     print(f"Experiment start time: {datetime.fromtimestamp(acquisition_start_timestamp).strftime('%Y-%m-%d %H:%M:%S')}")
                     success, start_time_str, end_time_str = process_root_file(file_path, table_prefix, channel_input, acquisition_start_timestamp, conn)
                     if success:
-                        # Rename the file with start and end times and change from .root to .root2
-                        original_filename = os.path.basename(file_path)
-                        new_filename = f"{start_time_str}-{end_time_str}_{original_filename[:-5]}.root2"
-                        new_file_path = os.path.join(os.path.dirname(file_path), new_filename)
-                        try:
-                            os.rename(file_path, new_file_path)
-                            print(f"File renamed to: {new_file_path}")
-                        except OSError as e:
-                            print(f"Failed to rename {file_path} to {new_file_path}: {e}")
-                            continue
+                        # Determine filename and path for metadata
+                        filename = os.path.basename(file_path)
+                        new_file_path = file_path
+                        if rename_files:
+                            # Rename the file with start and end times and change from .root to .root2
+                            new_filename = f"{start_time_str}-{end_time_str}_{filename[:-5]}.root2"
+                            new_file_path = os.path.join(os.path.dirname(file_path), new_filename)
+                            try:
+                                os.rename(file_path, new_file_path)
+                                print(f"File renamed to: {new_file_path}")
+                                filename = new_filename
+                            except OSError as e:
+                                print(f"Failed to rename {file_path} to {new_file_path}: {e}")
+                                exit(1)
 
                         # Insert root file metadata into the database
-                        filename = os.path.basename(new_file_path)
                         directory = os.path.dirname(new_file_path)
                         dir_components = directory.split(os.sep)
                         rel_dir = os.path.join(*dir_components[3:])
@@ -385,7 +400,7 @@ def main():
                         insert_root_file_to_db(conn, end_time_str, computer_name, daq_folder, rel_dir, filename)
                         print(f"Inserted root file metadata into the database")
 
-                        # Update DataFrame with new file path
+                        # Update DataFrame with new file path (or original if not renamed)
                         df.at[index, 'filename'] = new_file_path
                         df.at[index, 'processed'] = True
                         df.to_csv(csv_path, index=False)
