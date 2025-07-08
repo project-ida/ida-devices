@@ -199,7 +199,7 @@ def process_root_file(file_path, table_prefix, channel_number, acquisition_start
                 energy = arrays["Energy"]
                 energy_short = arrays["EnergyShort"]
 
-                 # PSP calculation with divide-by-zero protection
+                # PSP calculation with divide-by-zero protection
                 with np.errstate(divide='ignore', invalid='ignore'):
                     psp = np.where(energy != 0, (energy - energy_short) / energy, 0.0)
 
@@ -304,10 +304,20 @@ def main():
             return
     
     else:
-        # Prompt for folder and channel number
+        # Prompt for folder and channel numbers
         folder_path = input("Enter the folder path containing the Compass settings.xml file (ROOT files in RAW subfolder): ")
-        channel_input = input(f"Enter channel number (default '{default_channel}'): ") or str(default_channel)
-        file_pattern = f"_CH{channel_input}@"
+        channel_input = input(f"Enter channel numbers (comma-separated, e.g., 0,1,2, default '{default_channel}'): ") or str(default_channel)
+        
+        # Parse and validate channel numbers
+        try:
+            channels = [ch.strip() for ch in channel_input.split(",")]
+            for ch in channels:
+                if not ch.isdigit():
+                    raise ValueError(f"Invalid channel number: {ch}")
+            print(f"Processing channels: {channels}")
+        except ValueError as e:
+            print(f"Error: {e}")
+            sys.exit(1)
 
         # Resolve the folder path to handle virtual file systems (e.g., Google Drive)
         try:
@@ -330,14 +340,14 @@ def main():
             print(f"Error: {raw_folder} subfolder does not exist")
             return
         
-        # Build glob pattern to match files like *_CH0@*.root
-        pattern = os.path.join(raw_folder, f"*{file_pattern}*.root")
-
-        # Get list of ROOT files matching pattern in RAW subfolder
-        files = glob.glob(pattern)
+        # Build glob pattern to match files like *_CH0@*.root, *_CH1@*.root, etc.
+        patterns = [os.path.join(raw_folder, f"*_CH{ch}@*.root") for ch in channels]
+        files = []
+        for pattern in patterns:
+            files.extend(glob.glob(pattern))
 
         if not files:
-            print(f"No files with channel number '{channel_input}' and containing '.root' found in {raw_folder}")
+            print(f"No files with channel numbers {channels} and containing '.root' found in {raw_folder}")
             return
 
         # Sort files by number before .root
@@ -378,7 +388,8 @@ def main():
                 if os.path.exists(file_path):
                     print(f"Processing file {current_file_number} out of {total_files}: {os.path.basename(file_path)}")
                     print(f"Experiment start time: {datetime.fromtimestamp(acquisition_start_timestamp).strftime('%Y-%m-%d %H:%M:%S')}")
-                    success, start_time_str, end_time_str = process_root_file(file_path, table_prefix, channel_input, acquisition_start_timestamp, conn)
+                    channel_number = get_channel_number_from_filename(file_path)
+                    success, start_time_str, end_time_str = process_root_file(file_path, table_prefix, channel_number, acquisition_start_timestamp, conn)
                     if success:
                         # Determine filename and path for metadata
                         filename = os.path.basename(file_path)
@@ -393,7 +404,7 @@ def main():
                                 filename = new_filename
                             except OSError as e:
                                 print(f"Failed to rename {file_path} to {new_file_path}: {e}")
-                                exit(1)
+                                sys.exit(1)
 
                         # Insert root file metadata into the database
                         directory = os.path.dirname(new_file_path)
