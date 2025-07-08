@@ -275,7 +275,7 @@ def main():
 
     # Prompt for whether to rename files
     while True:
-        rename_files = input("Rename processed files to include start and end timestamps? (y/n): ").strip().lower()
+        rename_files = input("Rename processed files to include start and end timestamps and .root2? (y/n): ").strip().lower()
         if rename_files in ['y', 'n']:
             rename_files = rename_files == 'y'
             break
