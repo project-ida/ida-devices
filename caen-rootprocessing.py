@@ -27,19 +27,25 @@ from psql_credentials import PGHOST, PGPORT, PGDATABASE, PGUSER, PGPASSWORD
 
 # Connect to PostgreSQL database
 def connect_to_db():
-    try:
-        conn = psycopg2.connect(
-            dbname=PGDATABASE,
-            user=PGUSER,
-            password=PGPASSWORD,
-            host=PGHOST,
-            port=PGPORT,
-            connect_timeout=10
-        )
-        return conn
-    except psycopg2.OperationalError as e:
-        print(f"Failed to connect to database: {e}")
-        sys.exit(1)
+    max_retries = 3
+    for attempt in range(max_retries):
+        try:
+            conn = psycopg2.connect(
+                dbname=PGDATABASE,
+                user=PGUSER,
+                password=PGPASSWORD,
+                host=PGHOST,
+                port=PGPORT,
+                connect_timeout=10
+            )
+            return conn
+        except psycopg2.OperationalError as e:
+            if attempt < max_retries - 1:
+                print(f"Connection attempt {attempt + 1} failed: {e}. Retrying in 1s...")
+                time.sleep(1)
+            else:
+                print(f"Max retries ({max_retries}) reached. Failed to connect to database: {e}")
+                sys.exit(1)  # Terminates the program with an error code
 
 # Function to insert event timestamps with picosecond precision
 def insert_timestamps_to_db(conn, table_name, time_value, channels, ps):
