@@ -330,8 +330,8 @@ def main():
             print(f"Error: {raw_folder} subfolder does not exist")
             return
         
-        # Build glob pattern to match files like *_CH0@*.root or .root2
-        pattern = os.path.join(raw_folder, f"*{file_pattern}*.root*")
+        # Build glob pattern to match files like *_CH0@*.root
+        pattern = os.path.join(raw_folder, f"*{file_pattern}*.root")
 
         # Get list of ROOT files matching pattern in RAW subfolder
         files = glob.glob(pattern)
