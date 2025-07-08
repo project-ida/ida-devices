@@ -305,7 +305,7 @@ def main():
     
     else:
         # Prompt for folder and channel number
-        folder_path = input("Enter the folder path containing the Compass .txt file (ROOT files in RAW subfolder): ")
+        folder_path = input("Enter the folder path containing the Compass settings.xml file (ROOT files in RAW subfolder): ")
         channel_input = input(f"Enter channel number (default '{default_channel}'): ") or str(default_channel)
         file_pattern = f"_CH{channel_input}@"
 
