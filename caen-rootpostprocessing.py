@@ -16,7 +16,7 @@
 #   - Keeps track of processed files in processed_files.csv and skips already processed files.
 #
 # Requirements:
-#   - Folder structure: Parent folder with a Compass .txt file (containing "Start time = ..." on one line)
+#   - Folder structure: Parent folder with a settings.xml file (used to estimate start time from last modified time)
 #     and a RAW subfolder with ROOT files.
 #   - Files:
 #     - psql_credentials.py: Defines PGHOST, PGPORT, PGDATABASE, PGUSER, PGPASSWORD for PostgreSQL.
@@ -145,42 +145,28 @@ def get_acquisition_start(df):
         sys.exit(1)
     parent_folder = os.path.dirname(os.path.dirname(file_path))
     try:
-        acquisition_start_timestamp = get_acquisition_start_from_txt(parent_folder)
+        acquisition_start_timestamp = get_acquisition_start_from_settings(parent_folder)
         return acquisition_start_timestamp
     except Exception as e:
         print(f"Error retrieving experiment start time: {e}")
         sys.exit(1)
 
-# Function to extract acquisition start time from .txt file
-def get_acquisition_start_from_txt(folder_path):
+# Function to extract acquisition start time from settings.xml last modified time
+def get_acquisition_start_from_settings(parent_folder):
     try:
-        # Find the first .txt file in the folder
-        txt_files = [f for f in os.listdir(folder_path) if f.endswith('.txt')]
-        if not txt_files:
-            raise FileNotFoundError(f"No .txt file found in {folder_path}")
+        settings_file = os.path.join(parent_folder, "settings.xml")
         
-        txt_file = os.path.join(folder_path, txt_files[0])
+        if not os.path.exists(settings_file):
+            raise FileNotFoundError(f"settings.xml not found in {parent_folder}")
         
-        # Read the second line
-        with open(txt_file, 'r') as f:
-            lines = f.readlines()
-            if len(lines) < 2:
-                raise ValueError(f"{txt_file} does not have enough lines")
-            
-            second_line = lines[1].strip()
-            # Expect format: "Start time = Tue Feb 25 19:54:42 2025"
-            if not second_line.startswith("Start time = "):
-                raise ValueError(f"Second line in {txt_file} does not start with 'Start time = '")
-            
-            # Extract datetime string
-            datetime_str = second_line.replace("Start time = ", "")
-            # Parse datetime (format: Tue Feb 25 19:54:42 2025)
-            dt = datetime.strptime(datetime_str, "%a %b %d %H:%M:%S %Y")
-            # Convert to Unix timestamp
-            return dt.timestamp()
+        # Get the last modified time of settings.xml
+        settings_mtime = os.path.getmtime(settings_file)
+        acquisition_start_timestamp = settings_mtime
+        print(f"Last modified time of {settings_file}: {datetime.fromtimestamp(settings_mtime)}")
+        return acquisition_start_timestamp
     
     except Exception as e:
-        print(f"Error reading acquisition start time from {txt_file}: {e}")
+        print(f"Error accessing settings.xml in {parent_folder}: {e}")
         raise
 
 def process_root_file(file_path, table_prefix, channel_number, acquisition_start_timestamp, conn):
