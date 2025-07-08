@@ -28,7 +28,9 @@ from psql_credentials import PGHOST, PGPORT, PGDATABASE, PGUSER, PGPASSWORD
 
 # Connect to PostgreSQL database
 def connect_to_db():
-    max_retries = 3
+    alert_after_retries = 3
+    max_retries = 1_000_000
+
     for attempt in range(max_retries):
         try:
             conn = psycopg2.connect(
@@ -41,13 +43,15 @@ def connect_to_db():
             )
             return conn
         except psycopg2.OperationalError as e:
-            if attempt < max_retries - 1:
-                print(f"Connection attempt {attempt + 1} failed: {e}. Retrying in 1s...")
-                time.sleep(1)
-            else:
-                print(f"Max retries ({max_retries}) reached. Failed to connect to database: {e}")
-                send_telegram_alert("caen-rootprocessing failed: Failed to connect to database.")
-                sys.exit(1)  # Terminates the program with an error code
+            if attempt == alert_after_retries:
+                print(f"Sending alert after failing to connect to database {alert_after_retries} times: {e}")
+                send_telegram_alert("caen-rootprocessing failed: Cannot connect to the database.")
+            print(f"Connection attempt {attempt + 1} failed: {e}. Retrying in 5s...")
+            time.sleep(5)
+
+    print("Exceeded maximum number of retries. Exiting.")
+    sys.exit(1)
+
 
 # Function to insert event timestamps with picosecond precision
 def insert_timestamps_to_db(conn, table_name, time_value, channels, ps):
