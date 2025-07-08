@@ -54,6 +54,8 @@ Copied from [daqhats](https://github.com/mccdaq/daqhats):
 
 5. Copy `psql_credentials` into the `ida-devices` directory.
 
+6. Copy `telegram_credentials` into the `ida-devices` directory.
+
 
 ## 🧑‍💻 Running software
 
