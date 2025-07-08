@@ -178,7 +178,7 @@ psql_credentials
 psql_credentials.py
 
 # Telegram credentials
-telegram_bot_credentials.py
+telegram_credentials.py
 
 # Generated data files
 *.csv

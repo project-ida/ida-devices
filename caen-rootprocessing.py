@@ -10,6 +10,7 @@ from datetime import datetime, timedelta
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 from psycopg2.extras import execute_values
+from libs.telegram_notifier import send_telegram_alert
 
 # Add the parent directory (../) to the Python path
 parent_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
@@ -45,6 +46,7 @@ def connect_to_db():
                 time.sleep(1)
             else:
                 print(f"Max retries ({max_retries}) reached. Failed to connect to database: {e}")
+                send_telegram_alert("caen-rootprocessing failed: Failed to connect to database.")
                 sys.exit(1)  # Terminates the program with an error code
 
 # Function to insert event timestamps with picosecond precision
