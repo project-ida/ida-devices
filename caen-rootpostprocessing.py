@@ -421,7 +421,7 @@ def main():
                         print("Updated processed status in CSV")
                         print()
                     else:
-                        sys.exit(1)
+                        continue
                 else:
                     print(f"File not found: {file_path}")
                     df.at[index, 'processed'] = True
