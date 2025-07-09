@@ -173,12 +173,8 @@ cython_debug/
 # Files generated after install
 start-devices.sh
 
-# SQL login details
-psql_credentials
-psql_credentials.py
-
-# Telegram credentials
-telegram_credentials.py
+# All credentials files
+*_credentials*
 
 # Generated data files
 *.csv
