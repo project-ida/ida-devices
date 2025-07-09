@@ -22,17 +22,21 @@ finally:
 def send_heartbeat():
     """
     Pings healthchecks.io to signal that our data servers are still alive.
-  
+
     Returns:
         bool: True if the ping was sent successfully, False otherwise.
     """
     try:
         response = requests.get(f"https://hc-ping.com/{UUID}", timeout=10)
         response.raise_for_status()  # Raise an exception for 4xx/5xx errors
+
         if response.text.strip() == "OK":
             return True
         else:
-            print(f"[{datetime.now()}] Heartbeat send failed: {response.json().get('description', 'Unknown error')}")
+            print(f"[{datetime.now()}] Heartbeat send failed: Unexpected response: {repr(response.text)}")
             return False
+
     except requests.RequestException as e:
-        print(" Heartbeat send failed due to network error: %s" % e)
+        print(f"[{datetime.now()}] Heartbeat send failed due to network error: {e}")
+        return False
+
