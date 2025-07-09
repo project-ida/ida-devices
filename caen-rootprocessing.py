@@ -210,10 +210,11 @@ class ModifiedFileHandler(FileSystemEventHandler):
                 print(f"Skipping {file_path} because it has already been processed.")
                 return  # Skip processing this file
             try:
-                send_heartbeat()
                 conn = connect_to_db()
                 # Attempt to process the file
                 file_processed, start_time_str, end_time_str = process_root_file(file_path, table_prefix, conn)
+                # send heatbeat to healthchecks.io to signal that the data collection process is still alive
+                send_heartbeat()
                 if file_processed:
                     # Mark the file as processed
                     processed_files[file_path] = True
