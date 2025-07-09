@@ -436,6 +436,19 @@ def main():
     finally:
         conn.close()
         print("Connection closed")
+        # Check for unprocessed files in the CSV
+        if os.path.exists(csv_path):
+            df = pd.read_csv(csv_path)
+            unprocessed_files = df[~df['processed']]['filename'].tolist()
+            if unprocessed_files:
+                print("\n⚠️ The following files in processed_files.csv remain unprocessed:")
+                for file in unprocessed_files:
+                    print(f"  - {os.path.basename(file)}")
+                print(f"Total unprocessed files: {len(unprocessed_files)}")
+            else:
+                print("\n✅ All files in processed_files.csv have been processed.")
+        else:
+            print(f"\n⚠️ No processed_files.csv found at {csv_path}")
 
 if __name__ == "__main__":
     main()
