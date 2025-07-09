@@ -1,5 +1,6 @@
 import subprocess
 import socket
+import time
 
 def internet_available(timeout=2):
     """
