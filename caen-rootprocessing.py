@@ -12,6 +12,7 @@ from watchdog.events import FileSystemEventHandler
 from psycopg2.extras import execute_values
 from libs.telegram_notifier import send_telegram_alert
 from libs.network import internet_available, reset_wifi
+from libs.heartbeat import send_heartbeat
 
 # Add the parent directory (../) to the Python path
 parent_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
@@ -209,6 +210,7 @@ class ModifiedFileHandler(FileSystemEventHandler):
                 print(f"Skipping {file_path} because it has already been processed.")
                 return  # Skip processing this file
             try:
+                send_heartbeat()
                 conn = connect_to_db()
                 # Attempt to process the file
                 file_processed, start_time_str, end_time_str = process_root_file(file_path, table_prefix, conn)
