@@ -37,7 +37,7 @@ while True:
     # Run the Rclone command and capture the output
     rclone_command = f"rclone copy -v --progress {source_folder} {destination_folder} --exclude '*.root'"
     try:
-        result = subprocess.run(rclone_command, shell=True, capture_output=True, text=True)
+        result = subprocess.run(rclone_command, shell=True, capture_output=False, text=True)
         if result.returncode != 0:
             print(f"[{current_time}] Rclone copy failed. Please ensure the 'googledrive' Rclone config is set up correctly.")
             print(f"Error output: {result.stderr}")
