@@ -137,7 +137,7 @@ def get_channel_number_from_filename(file_path):
         raise ValueError(f"Could not extract channel number from file name: {file_path}")
 
 # Function to process the ROOT file
-def process_root_file(file_path, table_prefix, conn):
+def process_root_file(file_path, table_prefix):
     if not is_root_file_ready(file_path):
         return False, None, None
     
@@ -188,15 +188,19 @@ def process_root_file(file_path, table_prefix, conn):
                 subsecond_ps = int((abs_time - time_floor) * 1e12)
                 event_rows.append((time_value, [float(psp), float(energy)], subsecond_ps))
 
-            # Insert events in batches
-            insert_many_timestamps_to_db(conn, table_name, event_rows, batch_size=1000)
-            total_events += len(event_rows)
-            
-            print(f"🎉 Done: inserted {total_events} events from {os.path.basename(file_path)}")
-            print(f"current file start time: {datetime.fromtimestamp(start_time).strftime('%Y-%m-%d %H:%M:%S')}")
-            print(f"current file end time: {datetime.fromtimestamp(end_time).strftime('%Y-%m-%d %H:%M:%S')}")
-            return True, start_time_str, end_time_str
-
+            # Create new connection for event insertion
+            conn = connect_to_db()
+            try:
+                # Insert events in batches
+                insert_many_timestamps_to_db(conn, table_name, event_rows, batch_size=1000)
+                total_events += len(event_rows)
+                
+                print(f"🎉 Done: inserted {total_events} events from {os.path.basename(file_path)}")
+                print(f"current file start time: {datetime.fromtimestamp(start_time).strftime('%Y-%m-%d %H:%M:%S')}")
+                print(f"current file end time: {datetime.fromtimestamp(end_time).strftime('%Y-%m-%d %H:%M:%S')}")
+                return True, start_time_str, end_time_str
+            finally:
+                conn.close()
     except Exception as e:
         print(f"Failed to process {file_path}: {e}")
         return False, None, None
@@ -210,11 +214,10 @@ class ModifiedFileHandler(FileSystemEventHandler):
                 print(f"Skipping {file_path} because it has already been processed.")
                 return  # Skip processing this file
             try:
-                conn = connect_to_db()
                 # Attempt to process the file
-                file_processed, start_time_str, end_time_str = process_root_file(file_path, table_prefix, conn)
+                file_processed, start_time_str, end_time_str = process_root_file(file_path, table_prefix)
                 if file_processed:
-                    # send heatbeat to healthchecks.io to signal that the data collection process is still alive
+                    # send heartbeat to healthchecks.io to signal that the data collection process is still alive
                     send_heartbeat()
                     # Mark the file as processed
                     processed_files[file_path] = True
@@ -225,17 +228,21 @@ class ModifiedFileHandler(FileSystemEventHandler):
                     os.rename(file_path, new_file_path)
                     print(f"File renamed to: {new_file_path}")
 
-                    # Insert root file metadata into the database
-                    filename = os.path.basename(new_file_path)
-                    directory = os.path.dirname(new_file_path) # /home/cf/caen/daq/test/RAW
-                    dir_components = directory.split(os.sep) # ['', 'home', 'cf', 'caen', 'daq', 'test', 'RAW']
-                    rel_dir = os.path.join(*dir_components[3:])
-                    daq_folder = os.path.basename(os.path.dirname(os.path.dirname(new_file_path))) # test
-                    insert_root_file_to_db(conn, end_time_str, computer_name, daq_folder, rel_dir, filename)
-                    print(f"Inserted root file meta data into the database")
-
+                    # Create new connection for metadata insertion
+                    conn = connect_to_db()
+                    try:
+                        # Insert root file metadata into the database
+                        filename = os.path.basename(new_file_path)
+                        directory = os.path.dirname(new_file_path) # /home/cf/caen/daq/test/RAW
+                        dir_components = directory.split(os.sep) # ['', 'home', 'cf', 'caen', 'daq', 'test', 'RAW']
+                        rel_dir = os.path.join(*dir_components[3:])
+                        daq_folder = os.path.basename(os.path.dirname(os.path.dirname(new_file_path))) # test
+                        insert_root_file_to_db(conn, end_time_str, computer_name, daq_folder, rel_dir, filename)
+                        print(f"Inserted root file meta data into the database")
+                    finally:
+                        conn.close()
+                    
                     print("-----------END------------")
-                conn.close()
             except Exception as e:
                 print(f"Error processing file {file_path}: {e}")
 
