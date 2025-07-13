@@ -111,12 +111,38 @@ def insert_many_timestamps_to_db(conn, table_name, rows, batch_size=1000):
             execute_values(cur, query, batch)
     conn.commit()
 
+# Batched delete of timestamp events with exact match on time, channels, and ps
+def delete_many_timestamps_from_db(conn, table_name, rows, batch_size=1000):
+    with conn.cursor() as cur:
+        query = f"""
+            DELETE FROM {table_name}
+            WHERE (time, channels, ps) = ANY(%s)
+        """
+        for i in range(0, len(rows), batch_size):
+            batch = [(row[0], row[1], row[2]) for row in rows[i:i+batch_size]]
+            execute_values(cur, query, batch)
+    conn.commit()
+
 # Function to insert root file metadata into the database
 def insert_root_file_to_db(conn, time_value, computer, daq_folder, rel_dir, file):
     with conn.cursor() as cur:
         query = f"""
             INSERT INTO root_files (time, computer, daq_folder, dir, file)
             VALUES (%s, %s, %s, %s, %s)
+        """
+        cur.execute(query, (time_value, computer, daq_folder, rel_dir, file))
+    conn.commit()
+
+# Delete a single root file metadata entry with exact match on time, computer, daq_folder, dir, and file
+def delete_root_file_from_db(conn, time_value, computer, daq_folder, rel_dir, file):
+    with conn.cursor() as cur:
+        query = """
+            DELETE FROM root_files
+            WHERE time = %s
+            AND computer = %s
+            AND daq_folder = %s
+            AND dir = %s
+            AND file = %s
         """
         cur.execute(query, (time_value, computer, daq_folder, rel_dir, file))
     conn.commit()
