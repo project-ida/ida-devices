@@ -3,8 +3,8 @@
 watch_acq_times.py
 
 Monitors a DAQ directory (and subfolders) to detect acquisition runs by:
-- Printing the acquisition START time when the first .root file appears in a run folder (based on settings.xml mtime)
-- Printing the acquisition END time when a .txt file appears in that run folder (based on its ctime or mtime)
+- Printing the acquisition START time when a new settings.xml appears in a run folder (based on mtime)
+- Printing the acquisition END time when a dedicated .txt file (named after the run folder) appears in that same run folder (based on mtime)
 - On startup, scans existing run folders so you still see START and STOP for runs in progress or completed before the script began.
 """
 
@@ -21,109 +21,97 @@ from watchdog.events import FileSystemEventHandler
 reported = {}  # {run_folder: {'start': bool, 'stop': bool}}
 
 
+def get_file_mtime(path: str) -> datetime | None:
+    """
+    Return the last-modified time (mtime) of the file at path as a datetime,
+    or None if the file does not exist or an error occurs.
+    """
+    if not os.path.isfile(path):
+        logging.warning("File not found: %s", path)
+        return None
+    try:
+        return datetime.fromtimestamp(os.path.getmtime(path))
+    except Exception:
+        logging.exception("Error getting mtime for %s", path)
+        return None
+
+
 def get_settings_mtime(run_folder: str) -> datetime | None:
     """
-    Return the last-modified time of settings.xml in the run_folder.
+    Return the mtime of settings.xml in the run_folder.
     """
-    settings_path = os.path.join(run_folder, 'settings.xml')
-    if not os.path.isfile(settings_path):
-        logging.warning("settings.xml not found in %s", run_folder)
-        return None
-    try:
-        return datetime.fromtimestamp(os.path.getmtime(settings_path))
-    except Exception:
-        logging.exception("Error reading settings.xml in %s", run_folder)
-        return None
+    return get_file_mtime(os.path.join(run_folder, 'settings.xml'))
 
 
-def get_txt_time(run_folder: str) -> datetime | None:
+def get_txt_mtime(run_folder: str, run_name: str) -> datetime | None:
     """
-    Find any .txt file in run_folder, return its newest ctime (or mtime) as the stop time.
+    Return the mtime of the single .txt file named after the run (run_name + '.txt') in run_folder,
+    or None if it does not exist or an error occurs.
     """
-    try:
-        times = []
-        for fname in os.listdir(run_folder):
-            if fname.lower().endswith('.txt'):
-                path = os.path.join(run_folder, fname)
-                try:
-                    t = os.path.getctime(path)
-                except Exception:
-                    t = os.path.getmtime(path)
-                times.append(t)
-        if not times:
-            return None
-        return datetime.fromtimestamp(max(times))
-    except Exception:
-        logging.exception("Error scanning .txt files in %s", run_folder)
-        return None
+    return get_file_mtime(os.path.join(run_folder, f"{run_name}.txt"))
 
 
 class DAQHandler(FileSystemEventHandler):
     def on_created(self, event):
+        # ignore directory events
         if event.is_directory:
             return
-        path = event.src_path
-        # Determine run folder as parent of folder containing the file
-        folder = os.path.dirname(path)         # e.g. /.../DAQ/SOME_NAME/RAW
-        run_folder = os.path.dirname(folder)   # e.g. /.../DAQ/SOME_NAME
 
-        # Ensure we have an entry
+        path = event.src_path
+        filename = os.path.basename(path)
+        # Determine run folder as directory containing the file
+        run_folder = os.path.dirname(path)
+        run_name = os.path.basename(run_folder)
+
+        # Initialize status for this run if needed
         if run_folder not in reported:
             reported[run_folder] = {'start': False, 'stop': False}
 
-        # First .root => START
-        if path.lower().endswith('.root') and not reported[run_folder]['start']:
+        # settings.xml => START
+        if filename.lower() == 'settings.xml' and not reported[run_folder]['start']:
             start_dt = get_settings_mtime(run_folder)
             if start_dt:
-                print(f"START {os.path.basename(run_folder)}: {start_dt.strftime('%Y-%m-%d %H:%M:%S')}")
+                print(f"START {run_name}: {start_dt.strftime('%Y-%m-%d %H:%M:%S')}")
             reported[run_folder]['start'] = True
 
-        # First .txt => STOP
-        if path.lower().endswith('.txt') and not reported[run_folder]['stop']:
-            stop_dt = get_txt_time(run_folder)
+        # dedicated .txt => STOP
+        if filename.lower() == f'{run_name.lower()}.txt' and not reported[run_folder]['stop']:
+            stop_dt = get_txt_mtime(run_folder, run_name)
             if stop_dt:
-                print(f"STOP  {os.path.basename(run_folder)}: {stop_dt.strftime('%Y-%m-%d %H:%M:%S')}")
+                print(f"STOP  {run_name}: {stop_dt.strftime('%Y-%m-%d %H:%M:%S')}")
+            else:
+                logging.warning("Expected text file not found: %s.txt", run_name)
             reported[run_folder]['stop'] = True
 
 
 def initial_scan(root_folder: str):
     """
-    On startup, collect all runs (with settings.xml) and their
+    On startup, collect all runs (directories containing settings.xml) and their
     START/STOP times, then print them sorted by START time.
     """
-    runs = []  # will hold tuples: (start_dt, stop_dt, run_name)
+    runs = []  # list of (start_dt, stop_dt, run_name, run_folder)
 
     for dirpath, dirnames, filenames in os.walk(root_folder):
         if 'settings.xml' not in filenames:
             continue
         run_folder = dirpath
-        raw_folder = os.path.join(run_folder, 'RAW')
-        if not (os.path.isdir(raw_folder) and 
-                any(f.lower().endswith('.root') for f in os.listdir(raw_folder))):
-            continue
-
-        # get start and stop
+        run_name = os.path.basename(run_folder)
         start_dt = get_settings_mtime(run_folder)
-        stop_dt  = get_txt_time(run_folder)
-
-        # only record if we at least have a start time
+        stop_dt = get_txt_mtime(run_folder, run_name)
         if start_dt:
-            run_name = os.path.basename(run_folder)
-            runs.append((start_dt, stop_dt, run_name))
-            # mark as reported so live events won't duplicate
-            reported[run_folder] = {'start': True, 'stop': stop_dt is not None}
+            runs.append((start_dt, stop_dt, run_name, run_folder))
 
     # sort by start time
     runs.sort(key=lambda t: t[0])
 
-    # print in order
-    for start_dt, stop_dt, run_name in runs:
+    # print and mark reported
+    for start_dt, stop_dt, run_name, run_folder in runs:
         print(f"START {run_name}: {start_dt.strftime('%Y-%m-%d %H:%M:%S')}")
         if stop_dt:
             print(f"STOP  {run_name}: {stop_dt.strftime('%Y-%m-%d %H:%M:%S')}")
         else:
-            print(f"STOP  {run_name}: (no .txt found)")
-
+            print(f"STOP  {run_name}: (no {run_name}.txt found)")
+        reported[run_folder] = {'start': True, 'stop': stop_dt is not None}
 
 
 def main():
@@ -139,7 +127,7 @@ def main():
         logging.error("Invalid directory: %s", args.watch_folder)
         sys.exit(1)
 
-    # Perform initial scan so we capture runs already started or finished
+    # Initial scan to capture prior runs
     initial_scan(args.watch_folder)
 
     handler = DAQHandler()
