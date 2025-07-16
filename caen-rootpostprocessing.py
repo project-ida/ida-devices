@@ -269,7 +269,7 @@ def main():
         computer_name = os.getenv("COMPUTER_NAME")
         if not computer_name:
             print("Error: COMPUTER_NAME environment variable not set.")
-            print("You must run 'bash ida-devices/scripts/set-computer(point: name.sh' to set it.")
+            print("You must run 'bash ida-devices/scripts/set-computer-name.sh' to set it.")
             sys.exit(1)
     else:
         while True:
