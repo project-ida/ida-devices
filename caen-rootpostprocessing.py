@@ -269,7 +269,7 @@ def main():
         computer_name = os.getenv("COMPUTER_NAME")
         if not computer_name:
             print("Error: COMPUTER_NAME environment variable not set.")
-            print("You must run 'bash ida-devices/scripts/set-computer-name.sh' to set it.")
+            print("You must run 'bash ida-devices/scripts/set-computer(point: name.sh' to set it.")
             sys.exit(1)
     else:
         while True:
@@ -293,6 +293,13 @@ def main():
             rename_files = rename_files == 'y'
             break
         print("Invalid input. Please enter 'y' or 'n'.")
+
+    # Prompt for file types to process
+    while True:
+        file_types = input("Process which file types? (1: .root only, 2: .root2 only, 3: both .root and .root2): ").strip()
+        if file_types in ['1', '2', '3']:
+            break
+        print("Invalid input. Please enter '1', '2', or '3'.")
 
     default_channel = 0  # Default channel number
 
@@ -353,14 +360,20 @@ def main():
             print(f"Error: {raw_folder} subfolder does not exist")
             return
         
-        # Build glob pattern to match files like *_CH0@*.root, *_CH1@*.root, etc.
-        patterns = [os.path.join(raw_folder, f"*_CH{ch}@*.root") for ch in channels]
+        # Build glob pattern based on user selection
+        if file_types == '1':
+            patterns = [os.path.join(raw_folder, f"*_CH{ch}@*.root") for ch in channels]
+        elif file_types == '2':
+            patterns = [os.path.join(raw_folder, f"*_CH{ch}@*.root2") for ch in channels]
+        else:  # file_types == '3'
+            patterns = [os.path.join(raw_folder, f"*_CH{ch}@*.root*") for ch in channels]
+
         files = []
         for pattern in patterns:
             files.extend(glob.glob(pattern))
 
         if not files:
-            print(f"No files with channel numbers {channels} and containing '.root' found in {raw_folder}")
+            print(f"No files with channel numbers {channels} and matching selected file types found in {raw_folder}")
             return
 
         # Sort files by number before .root
