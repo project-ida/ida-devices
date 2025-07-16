@@ -6,6 +6,7 @@ Monitors a DAQ directory (and subfolders) to detect acquisition runs by:
 - Printing the acquisition START time when a new settings.xml appears in a run folder (based on mtime)
 - Printing the acquisition END time when a dedicated .txt file (named after the run folder) appears in that same run folder (based on mtime)
 - On startup, scans existing run folders so you still see START and STOP for runs in progress or completed before the script began.
+- Displays a live spinner in the terminal to indicate the watcher is running.
 """
 
 import os
@@ -27,7 +28,6 @@ def get_file_mtime(path: str) -> datetime | None:
     or None if the file does not exist or an error occurs.
     """
     if not os.path.isfile(path):
-        logging.warning("File not found: %s", path)
         return None
     try:
         return datetime.fromtimestamp(os.path.getmtime(path))
@@ -71,16 +71,14 @@ class DAQHandler(FileSystemEventHandler):
         if filename.lower() == 'settings.xml' and not reported[run_folder]['start']:
             start_dt = get_settings_mtime(run_folder)
             if start_dt:
-                print(f"START {run_name}: {start_dt.strftime('%Y-%m-%d %H:%M:%S')}")
+                print(f"\nSTART {run_name}: {start_dt.strftime('%Y-%m-%d %H:%M:%S')}")
             reported[run_folder]['start'] = True
 
         # dedicated .txt => STOP
         if filename.lower() == f'{run_name.lower()}.txt' and not reported[run_folder]['stop']:
             stop_dt = get_txt_mtime(run_folder, run_name)
             if stop_dt:
-                print(f"STOP  {run_name}: {stop_dt.strftime('%Y-%m-%d %H:%M:%S')}")
-            else:
-                logging.warning("Expected text file not found: %s.txt", run_name)
+                print(f"\nSTOP  {run_name}: {stop_dt.strftime('%Y-%m-%d %H:%M:%S')}")
             reported[run_folder]['stop'] = True
 
 
@@ -134,13 +132,18 @@ def main():
     observer = Observer()
     observer.schedule(handler, path=args.watch_folder, recursive=True)
     observer.start()
-    print(f"Monitoring '{args.watch_folder}' for acquisition runs...")
 
+    # Spinner setup
+    spinner = ['|', '/', '-', '\\']
+    idx = 0
     try:
         while True:
-            time.sleep(1)
+            sys.stdout.write(f"\r{spinner[idx % len(spinner)]} Watching {args.watch_folder}")
+            sys.stdout.flush()
+            idx += 1
+            time.sleep(0.2)
     except KeyboardInterrupt:
-        print("Stopping monitor.")
+        print("\nStopping monitor.")
         observer.stop()
     observer.join()
 
