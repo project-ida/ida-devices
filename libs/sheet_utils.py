@@ -11,20 +11,18 @@ while credentials.json remains a separate service account key file.
 """
 
 import os
-import sys
 import json
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 from datetime import datetime
-from collections import Counter
 
 # --- Fixed credentials file ---
-SERVICE_ACCOUNT_FILE = 'credentials.json'  # Google service account key
+SERVICE_ACCOUNT_FILE = 'secrets/credentials.json'  # Google service account key
 
 # --- Load sheet config from external file ---
 # Expected to contain JSON with keys: spreadsheet_id, sheet_name,
 # optionally col_run_name, col_setup, col_end, header_row
-CONFIG_FILE = os.getenv('SHEET_CONFIG_PATH', 'sheet_config.json')
+CONFIG_FILE = os.getenv('SHEET_CONFIG_PATH', 'config/sheet_config.json')
 try:
     with open(CONFIG_FILE, 'r') as cf:
         cfg = json.load(cf)
@@ -55,16 +53,11 @@ sheet = gc.open_by_key(SPREADSHEET_ID).worksheet(SHEET_NAME)
 
 
 def load_run_names() -> set:
+    """
+    Load all existing run names from column G into a set.
+    """
     values = sheet.col_values(COL_RUN_NAME)
-    values = [v.strip() for v in values if v.strip()]
-    # Check for duplicates
-    dups = [name for name, count in Counter(values).items() if count > 1]
-    
-    if dups:
-        print(f"Warning: Duplicate run names found: {dups}. Fix spreadsheet and try again.")
-        sys.exit(1)
- 
-    return (values)
+    return {v.strip() for v in values if v.strip()}
 
 
 def find_run_row(run_name: str) -> int | None:
@@ -130,5 +123,4 @@ def update_end_time(run_name: str, end_dt: datetime):
     """
     row = find_run_row(run_name)
     if row:
-        sheet.update_cell(row, COL_END, end_dt.strftime('%Y-%m-%d %H:%M:%S')) 
-        
+        sheet.update_cell(row, COL_END, end_dt.strftime('%Y-%m-%d %H:%M:%S'))
