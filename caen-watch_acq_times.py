@@ -14,13 +14,16 @@ import sys
 import time
 import logging
 import argparse
+import socket
 from datetime import datetime
 
-# Watchdog for filesystem events
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 
-# Make sure our `libs/` folder is on the import path:
+# Determine local host name (or from env var)
+COMPUTER_NAME = os.getenv("COMPUTER_NAME") or socket.gethostname()
+
+# Ensure libs/ is on the path
 PROJECT_ROOT = os.path.abspath(os.path.dirname(__file__))
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
@@ -32,6 +35,7 @@ from libs.google_sheet_utils import (
     append_run,
     update_setup_time,
     update_end_time,
+    update_pc_name,
 )
 
 # -------------------------------------------------------------------
@@ -65,24 +69,24 @@ def estimate_end(path: str) -> datetime | None:
     except Exception:
         return None
 
-def initial_scan(root_folder):
+def initial_scan(root_folder: str):
     runs = []
     for dirpath, dirnames, filenames in os.walk(root_folder):
-        # 1a) Prevent os.walk from even recursing into hidden subfolders:
+        # 1a) Prevent recursing into hidden subfolders
         dirnames[:] = [d for d in dirnames if not d.startswith('.')]
-
-        # 1b) Skip this folder entirely if it *is* hidden:
-        run_name = os.path.basename(dirpath)
-        if run_name.startswith('.'):
+        # 1b) Skip this folder if it’s hidden
+        if os.path.basename(dirpath).startswith('.'):
             continue
 
         if 'settings.xml' not in filenames:
             continue
-        run_name = os.path.basename(dirpath)
-        settings_path = os.path.join(dirpath, 'settings.xml')
-        txt_path = os.path.join(dirpath, f'{run_name}.txt')
-        start_dt = estimate_start(settings_path)
-        stop_dt  = estimate_end(txt_path) if os.path.exists(txt_path) else None
+
+        run_name     = os.path.basename(dirpath)
+        settings_pth = os.path.join(dirpath, 'settings.xml')
+        txt_pth      = os.path.join(dirpath, f'{run_name}.txt')
+        start_dt     = estimate_start(settings_pth)
+        stop_dt      = estimate_end(txt_pth) if os.path.exists(txt_pth) else None
+
         if start_dt:
             runs.append((start_dt, stop_dt, run_name, dirpath))
 
@@ -102,10 +106,10 @@ class DAQHandler(FileSystemEventHandler):
         name = os.path.basename(event.src_path)
         if name.startswith('.'):
             return
-            
-        path = event.src_path
+
+        path       = event.src_path
         run_folder = os.path.dirname(path)
-        run_name = os.path.basename(run_folder)
+        run_name   = os.path.basename(run_folder)
 
         # START event
         if is_settings_file(path):
@@ -118,6 +122,7 @@ class DAQHandler(FileSystemEventHandler):
                     append_run(run_name, start_dt, None)
                 else:
                     update_setup_time(run_name, start_dt)
+                update_pc_name(run_name, COMPUTER_NAME)
 
         # STOP event
         elif is_end_file(path):
@@ -131,12 +136,16 @@ class DAQHandler(FileSystemEventHandler):
                     append_run(run_name, None, stop_dt)
                 else:
                     update_end_time(run_name, stop_dt)
+                update_pc_name(run_name, COMPUTER_NAME)
 
 # -------------------------------------------------------------------
 # Main
 # -------------------------------------------------------------------
 
 def main():
+    # configure logging early
+    logging.basicConfig(level=logging.INFO, format='%(message)s')
+
     parser = argparse.ArgumentParser(
         description="Watch a DAQ directory and mirror START/STOP times into Google Sheets"
     )
@@ -157,12 +166,10 @@ def main():
             print("\nNo folder provided—exiting.")
             sys.exit(1)
 
-    # Final sanity check
+    # final check
     if not os.path.isdir(watch_folder):
         logging.error("Invalid directory: %s", watch_folder)
         sys.exit(1)
-
-    logging.basicConfig(level=logging.INFO, format='%(message)s')
 
     # 1) Initial directory scan
     runs = initial_scan(watch_folder)
@@ -172,6 +179,7 @@ def main():
     for start_dt, stop_dt, run_name, _ in runs:
         print(f"SYNC  {run_name}: START={start_dt:%Y-%m-%d %H:%M:%S}  STOP={stop_dt or '(none)'}")
         row = find_run_row(run_name)
+
         if row is None:
             append_run(run_name, start_dt, stop_dt)
         else:
@@ -179,8 +187,11 @@ def main():
             if stop_dt:
                 update_end_time(run_name, stop_dt)
 
+        # populate DAQ_PC column if blank
+        update_pc_name(run_name, COMPUTER_NAME)
+
     # 3) Start live monitoring
-    handler = DAQHandler()
+    handler  = DAQHandler()
     observer = Observer()
     observer.schedule(handler, path=watch_folder, recursive=True)
     observer.start()
@@ -188,7 +199,7 @@ def main():
 
     # 4) Simple spinner to show liveness
     spinner = ['|', '/', '-', '\\']
-    idx = 0
+    idx     = 0
     try:
         while True:
             sys.stdout.write(f"\r{spinner[idx % len(spinner)]} watching…")
@@ -199,7 +210,6 @@ def main():
         print("\nStopping monitor.")
         observer.stop()
     observer.join()
-
 
 if __name__ == '__main__':
     main()

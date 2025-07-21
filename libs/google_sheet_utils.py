@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-libs/sheet_utils.py
+libs/google_sheet_utils.py
 
 Google Sheets utilities for run monitoring using gspread.
 This version does one initial fetch of the entire sheet into memory,
@@ -8,10 +8,17 @@ then services all read operations locally. Only append/update calls
 hit the API thereafter.
 
 Requirements:
-  - A service‐account JSON key at credentials.json
-  - A config file at config/google_sheet_config.json defining:
-      * spreadsheet_id, sheet_name, header_row,
-      * columns.id_header, run_name_header, setup_header, end_header
+  - A service‐account JSON key at GOOGLE_CREDS (default "credentials.json")
+  - A config file at SHEET_CONFIG_PATH (default "config/google_sheet_config.json")
+    defining:
+      * spreadsheet_id
+      * sheet_name
+      * header_row
+      * columns.id_header
+      * columns.google_drive_data_folders_header
+      * columns.setup_header
+      * columns.end_header
+      * columns.daq_laptop_name_header
 """
 
 import os
@@ -38,6 +45,7 @@ try:
         RUN_HEADER     = cols['google_drive_data_folders_header']
         SETUP_HEADER   = cols['setup_header']
         END_HEADER     = cols['end_header']
+        DAQ_PC_HEADER  = cols['daq_laptop_name_header']
 except Exception as e:
     raise RuntimeError(f"Failed to load sheet config from {CONFIG_FILE}: {e}")
 
@@ -58,7 +66,7 @@ headers       = all_rows[HEADER_ROW - 1]
 header_to_col = {name: idx + 1 for idx, name in enumerate(headers)}
 
 # verify required headers exist
-for hdr in (ID_HEADER, RUN_HEADER, SETUP_HEADER, END_HEADER):
+for hdr in (ID_HEADER, RUN_HEADER, SETUP_HEADER, END_HEADER, DAQ_PC_HEADER):
     if hdr not in header_to_col:
         raise RuntimeError(f"Missing required header '{hdr}' in row {HEADER_ROW}")
 
@@ -66,6 +74,7 @@ COL_ID       = header_to_col[ID_HEADER]
 COL_RUN_NAME = header_to_col[RUN_HEADER]
 COL_SETUP    = header_to_col[SETUP_HEADER]
 COL_END      = header_to_col[END_HEADER]
+COL_DAQ_PC   = header_to_col[DAQ_PC_HEADER]
 
 # rows below the header, zero-indexed
 data_rows = all_rows[HEADER_ROW:]
@@ -174,7 +183,6 @@ def update_setup_time(run_name: str, setup_dt: datetime) -> None:
     _retry_api_call(ws.update_cell, row_idx, COL_SETUP, val)
     data_rows[row_idx - HEADER_ROW - 1][COL_SETUP - 1] = val
 
-
 def update_end_time(run_name: str, end_dt: datetime) -> None:
     """
     Overwrite the 'End' cell for the given run, in both sheet and memory,
@@ -193,3 +201,18 @@ def update_end_time(run_name: str, end_dt: datetime) -> None:
     _retry_api_call(ws.update_cell, row_idx, COL_END, val)
     data_rows[row_idx - HEADER_ROW - 1][COL_END - 1] = val
 
+def update_pc_name(run_name: str, pc_name: str) -> None:
+    """
+    If the 'DAQ PC' cell is blank, write `pc_name`.
+    Never overwrite an existing value.
+    """
+    row_idx = find_run_row(run_name)
+    if row_idx is None:
+        return
+
+    current = data_rows[row_idx - HEADER_ROW - 1][COL_DAQ_PC - 1].strip()
+    if current:
+        return
+
+    _retry_api_call(ws.update_cell, row_idx, COL_DAQ_PC, pc_name)
+    data_rows[row_idx - HEADER_ROW - 1][COL_DAQ_PC - 1] = pc_name
