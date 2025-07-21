@@ -158,30 +158,38 @@ def append_run(run_name: str, setup_dt: datetime, end_dt: Optional[datetime] = N
 
 def update_setup_time(run_name: str, setup_dt: datetime) -> None:
     """
-    Overwrite the 'Setup' cell for the given run, in both sheet and memory.
+    Overwrite the 'Setup' cell for the given run, in both sheet and memory,
+    but only if it’s currently blank.
     """
-    if not isinstance(setup_dt, datetime):
-        raise TypeError("setup_dt must be a datetime instance")
-
     row_idx = find_run_row(run_name)
     if row_idx is None:
         raise ValueError(f"Run '{run_name}' not found")
+
+    # DON’T overwrite if already present
+    current = data_rows[row_idx - HEADER_ROW - 1][COL_SETUP - 1].strip()
+    if current:
+        return
 
     val = setup_dt.strftime('%Y-%m-%d %H:%M:%S')
     _retry_api_call(ws.update_cell, row_idx, COL_SETUP, val)
     data_rows[row_idx - HEADER_ROW - 1][COL_SETUP - 1] = val
 
+
 def update_end_time(run_name: str, end_dt: datetime) -> None:
     """
-    Overwrite the 'End' cell for the given run, in both sheet and memory.
+    Overwrite the 'End' cell for the given run, in both sheet and memory,
+    but only if it’s currently blank.
     """
-    if not isinstance(end_dt, datetime):
-        raise TypeError("end_dt must be a datetime instance")
-
     row_idx = find_run_row(run_name)
     if row_idx is None:
         raise ValueError(f"Run '{run_name}' not found")
 
+    # DON’T overwrite if already present
+    current = data_rows[row_idx - HEADER_ROW - 1][COL_END - 1].strip()
+    if current:
+        return
+
     val = end_dt.strftime('%Y-%m-%d %H:%M:%S')
     _retry_api_call(ws.update_cell, row_idx, COL_END, val)
     data_rows[row_idx - HEADER_ROW - 1][COL_END - 1] = val
+
