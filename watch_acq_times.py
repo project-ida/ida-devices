@@ -140,17 +140,32 @@ def main():
     parser = argparse.ArgumentParser(
         description="Watch a DAQ directory and mirror START/STOP times into Google Sheets"
     )
-    parser.add_argument('watch_folder', help='Root DAQ directory to monitor')
+    # make the watch_folder argument optional
+    parser.add_argument('watch_folder', nargs='?', help='Root DAQ directory to monitor')
     args = parser.parse_args()
+
+    # If not given on the CLI, prompt the user until a valid directory is entered
+    watch_folder = args.watch_folder
+    if not watch_folder:
+        try:
+            while True:
+                watch_folder = input("Enter the DAQ folder to monitor: ").strip()
+                if os.path.isdir(watch_folder):
+                    break
+                print(f"❌  '{watch_folder}' is not a valid directory. Please try again.")
+        except (EOFError, KeyboardInterrupt):
+            print("\nNo folder provided—exiting.")
+            sys.exit(1)
+
+    # Final sanity check
+    if not os.path.isdir(watch_folder):
+        logging.error("Invalid directory: %s", watch_folder)
+        sys.exit(1)
 
     logging.basicConfig(level=logging.INFO, format='%(message)s')
 
-    if not os.path.isdir(args.watch_folder):
-        logging.error("Invalid directory: %s", args.watch_folder)
-        sys.exit(1)
-
     # 1) Initial directory scan
-    runs = initial_scan(args.watch_folder)
+    runs = initial_scan(watch_folder)
 
     # 2) Sync initial scan into the sheet
     print("\n=== Initial Scan & Sheet Sync ===")
@@ -167,12 +182,12 @@ def main():
     # 3) Start live monitoring
     handler = DAQHandler()
     observer = Observer()
-    observer.schedule(handler, path=args.watch_folder, recursive=True)
+    observer.schedule(handler, path=watch_folder, recursive=True)
     observer.start()
-    print(f"\nMonitoring '{args.watch_folder}' for new START/STOP events...")
+    print(f"\nMonitoring '{watch_folder}' for new START/STOP events...")
 
     # 4) Simple spinner to show liveness
-    spinner = ['|','/','-','\\']
+    spinner = ['|', '/', '-', '\\']
     idx = 0
     try:
         while True:
@@ -184,6 +199,7 @@ def main():
         print("\nStopping monitor.")
         observer.stop()
     observer.join()
+
 
 if __name__ == '__main__':
     main()
