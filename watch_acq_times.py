@@ -26,7 +26,7 @@ if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
 # Import our sheet utilities from libs/
-from libs.sheet_utils import (
+from libs.google_sheet_utils import (
     load_run_names,
     find_run_row,
     append_run,
