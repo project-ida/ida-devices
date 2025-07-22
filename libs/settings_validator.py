@@ -1,0 +1,272 @@
+# libs/settings_validator.py
+
+import xml.etree.ElementTree as ET
+from pathlib import Path
+from typing import Dict, List, Tuple
+import difflib
+
+
+def _extract_sections(xml_path: Path) -> Dict:
+    tree = ET.parse(xml_path)
+    root = tree.getroot()
+    out: Dict = {}
+
+    # Board
+    board = root.find('board')
+    if board is not None:
+        for tag in ('id','modelName','serialNumber','label'):
+            el = board.find(tag)
+            out[f'board.{tag}'] = (el.text or '').strip()
+
+    # Parameters
+    params = {}
+    for entry in root.findall('.//parameters/entry'):
+        key = entry.findtext('key','').strip()
+        val_el = entry.find('value')
+        if val_el is not None:
+            nested = val_el.findtext('value')
+            val = nested if nested is not None else (val_el.text or '')
+        else:
+            val = ''
+        params[key] = val.strip()
+    out['parameters'] = params
+
+    # Channels
+    chans = {}
+    for ch in root.findall('.//virtualChannelsMemento/channel'):
+        ch_id = ch.get('id')
+        chans[ch_id] = ET.tostring(ch, encoding='unicode')
+    out['channels'] = chans
+
+    # Subtrees raw XML
+    for section in ('acquisitionMemento','timeCorrelationMemento','virtualChannelsMemento'):
+        el = root.find(section)
+        out[section] = ET.tostring(el, encoding='unicode') if el is not None else ''
+
+    return out
+
+
+def _extract_simple_fields_from_subtree(xml_text: str, wanted_fields=('runId',)) -> Dict[str,str]:
+    if not xml_text:
+        return {}
+    try:
+        root = ET.fromstring(xml_text)
+    except ET.ParseError:
+        return {}
+    out = {}
+    for child in root:
+        if child.tag in wanted_fields:
+            out[child.tag] = (child.text or '').strip()
+    return out
+
+
+def validate_against_references(current_path: str, config_folder: str) -> List[str]:
+    """
+    Compare current settings.xml to each reference XML in config_folder.
+    Returns only short summary lines for *all* detected differences.
+    """
+    curr = Path(current_path)
+    refs = list(Path(config_folder).glob('*.xml'))
+    if not curr.exists() or not refs:
+        return []
+
+    curr_sec = _extract_sections(curr)
+    out: List[str] = []
+
+    for ref in refs:
+        ref_sec = _extract_sections(ref)
+        diffs: List[str] = []
+
+        # Board + parameters
+        for key in ('board.id','board.modelName','board.serialNumber','board.label'):
+            a = curr_sec.get(key, '')
+            b = ref_sec.get(key, '')
+            if a != b:
+                diffs.append(f"[{ref.name}] {key} differs: {b!r} → {a!r}")
+
+        for k, v in curr_sec['parameters'].items():
+            rv = ref_sec['parameters'].get(k)
+            if rv is None:
+                diffs.append(f"[{ref.name}] parameter '{k}' missing in reference")
+            elif rv != v:
+                diffs.append(f"[{ref.name}] parameter '{k}' differs: {rv!r} → {v!r}")
+
+        # Channels (only report missing)
+        for ch_id in curr_sec['channels']:
+            if ch_id not in ref_sec['channels']:
+                diffs.append(f"[{ref.name}] channel id={ch_id} missing")
+
+        # Subtree simple fields (e.g. runId)
+        for section in ('acquisitionMemento','timeCorrelationMemento','virtualChannelsMemento'):
+            ref_fields = _extract_simple_fields_from_subtree(ref_sec.get(section,''))
+            cur_fields = _extract_simple_fields_from_subtree(curr_sec.get(section,''))
+            for fld, old_val in ref_fields.items():
+                new_val = cur_fields.get(fld, '')
+                if old_val != new_val:
+                    diffs.append(
+                        f"[{ref.name}] {section}.{fld} differs: {old_val!r} → {new_val!r}"
+                    )
+
+        if diffs:
+            out.append(f"=== Diffs vs {ref.name} ===")
+            out.extend(diffs)
+            out.append("")
+
+    return out
+
+
+def report_reference_comparison(
+    settings_path: str,
+    config_folder: str,
+    ignore_tag: str = 'runId',
+    max_diffs: int = 10
+) -> None:
+    """
+    Compare settings_path to all XMLs in config_folder. Prints:
+      - Warning if settings_path or config_folder is missing
+      - Warning if no references found
+      - ✅ if any reference matches exactly
+      - Otherwise up to max_diffs unified-diff lines per reference,
+        and a summary if there are more.
+    """
+    settings_file = Path(settings_path)
+    config_dir    = Path(config_folder)
+
+    if not settings_file.is_file():
+        print(f"⚠️ Settings compare: '{settings_path}' not found.")
+        return
+    if not config_dir.is_dir():
+        print(f"⚠️ Settings compare: config folder '{config_folder}' not found.")
+        return
+
+    refs = sorted(config_dir.glob('*.xml'))
+    if not refs:
+        print(f"⚠️ Settings compare: no reference XMLs in '{config_folder}'.")
+        return
+
+    # read & filter settings
+    try:
+        lines = settings_file.read_text(encoding='utf-8').splitlines()
+    except Exception as e:
+        print(f"⚠️ Settings compare: cannot read '{settings_path}': {e}")
+        return
+    filtered = [ln for ln in lines if ignore_tag not in ln]
+
+    exact = []
+    for ref in refs:
+        ref_lines = []
+        try:
+            ref_lines = ref.read_text(encoding='utf-8').splitlines()
+        except Exception:
+            print(f"⚠️ Settings compare: cannot read '{ref.name}' – skipping.")
+            continue
+        ref_filtered = [ln for ln in ref_lines if ignore_tag not in ln]
+
+        diffs = list(difflib.unified_diff(
+            ref_filtered, filtered,
+            fromfile=ref.name, tofile=settings_file.name, lineterm=''
+        ))
+        if not diffs:
+            exact.append(ref.name)
+        else:
+            print(f"\nDiff vs {ref.name}:")
+            for line in diffs[:max_diffs]:
+                print(line)
+            more = len(diffs) - max_diffs
+            if more > 0:
+                print(f"...and {more} more differences...")
+    if exact:
+        print(f"\n✅ Exact match with: {', '.join(exact)}")
+    else:
+        print("\n⚠️ No exact matches found.")
+
+def _load_parameter_map(xml_path: Path) -> Tuple[dict, List[str]]:
+    """
+    Parses the XML at xml_path and returns:
+      - A dict of {param_key: param_value}
+      - A list of raw file lines for later line-number lookup
+    """
+    text = xml_path.read_text(encoding='utf-8').splitlines()
+    tree = ET.fromstring("\n".join(text))
+    params = {}
+    for entry in tree.findall('.//parameters/entry'):
+        key = entry.findtext('key','').strip()
+        # value might be nested <value><value>…</value></value>
+        val_el = entry.find('value')
+        if val_el is not None:
+            nested = val_el.findtext('value')
+            val = (nested if nested is not None else val_el.text or '').strip()
+        else:
+            val = ''
+        params[key] = val
+    return params, text
+
+def report_parameter_diffs(
+    settings_path: str,
+    config_folder: str,
+    max_diffs: int = 3
+) -> None:
+    """
+    Compare <parameters> in settings.xml against each .xml in config_folder.
+    - Groups all exact matches into one line.
+    - Groups all differing files and then lists up to max_diffs per file.
+    - Skips missing/empty settings or missing config dir.
+    """
+    sfile = Path(settings_path)
+    cdir  = Path(config_folder)
+
+    # Pre‐checks
+    if not sfile.is_file() or sfile.stat().st_size == 0:
+        print(f"⚠️  Skipping diff: '{settings_path}' is missing or empty.")
+        return
+    if not cdir.is_dir():
+        print(f"⚠️  Config folder not found: {config_folder}")
+        return
+
+    refs = sorted(cdir.glob('*.xml'))
+    if not refs:
+        print(f"⚠️  No reference XMLs in {cdir}")
+        return
+
+    # Load master parameter map
+    s_map, s_lines = _load_parameter_map(sfile)
+
+    matches: List[str] = []
+    diffs_map: dict[str, List[tuple[int, str, str, str]]] = {}
+
+    for ref in refs:
+        r_map, _ = _load_parameter_map(ref)
+        diffs: List[tuple[int, str, str, str]] = []
+
+        for key, new_val in s_map.items():
+            old_val = r_map.get(key)
+            if old_val is None or old_val == new_val:
+                continue
+
+            # find line in settings.xml
+            lineno = next(
+                (i+1 for i, ln in enumerate(s_lines)
+                 if f">{new_val}</value>" in ln),
+                None
+            )
+            if lineno:
+                diffs.append((lineno, key, old_val, new_val))
+
+        if not diffs:
+            matches.append(ref.name)
+        else:
+            diffs_map[ref.name] = diffs
+
+    # Print grouped results
+    if matches:
+        print(f"✅ Exact matches: {', '.join(matches)}")
+    if diffs_map:
+        print(f"⚠️  Differences detected in: {', '.join(diffs_map.keys())}")
+        for ref_name, diffs in diffs_map.items():
+            print(f"**{ref_name}**")
+            for lineno, key, old, new in diffs[:max_diffs]:
+                print(f"  L{lineno:<4} {key:<24}: '{old}' → '{new}'")
+            more = len(diffs) - max_diffs
+            if more > 0:
+                print(f"  ...and {more} more differences...")
+

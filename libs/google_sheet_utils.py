@@ -26,7 +26,6 @@ import json
 import time
 from typing import List, Optional
 from datetime import datetime
-from typing import List, Optional
 
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
@@ -69,16 +68,16 @@ headers       = all_rows[HEADER_ROW - 1]
 header_to_col = {name: idx + 1 for idx, name in enumerate(headers)}
 
 # verify required headers exist
-for hdr in (ID_HEADER, RUN_HEADER, SETUP_HEADER, END_HEADER, DAQ_PC_HEADER):
+for hdr in (ID_HEADER, RUN_HEADER, SETUP_HEADER, END_HEADER, DAQ_PC_HEADER, DIGITIZER_HEADER):
     if hdr not in header_to_col:
         raise RuntimeError(f"Missing required header '{hdr}' in row {HEADER_ROW}")
 
-COL_ID       = header_to_col[ID_HEADER]
-COL_RUN_NAME = header_to_col[RUN_HEADER]
-COL_SETUP    = header_to_col[SETUP_HEADER]
-COL_END      = header_to_col[END_HEADER]
-COL_DAQ_PC   = header_to_col[DAQ_PC_HEADER]
-COL_DIGITIZER    = header_to_col[DIGITIZER_HEADER]
+COL_ID        = header_to_col[ID_HEADER]
+COL_RUN_NAME  = header_to_col[RUN_HEADER]
+COL_SETUP     = header_to_col[SETUP_HEADER]
+COL_END       = header_to_col[END_HEADER]
+COL_DAQ_PC    = header_to_col[DAQ_PC_HEADER]
+COL_DIGITIZER = header_to_col[DIGITIZER_HEADER]
 
 # rows below the header, zero-indexed
 data_rows = all_rows[HEADER_ROW:]

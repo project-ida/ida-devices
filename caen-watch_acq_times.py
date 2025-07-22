@@ -41,6 +41,12 @@ from libs.google_sheet_utils import (
 # Import our settings_extras from libs/
 from libs.settings_extras import extract_digitizer_info
 
+# Import our settings_validator from libs/
+from libs.settings_validator import report_parameter_diffs
+from pathlib import Path
+
+# Name of the folder (under your watch root) that holds reference XMLs:
+CONFIG_REF_DIR_NAME = 'CONFIG'
 
 # -------------------------------------------------------------------
 # Helper functions for scanning and processing run folders
@@ -102,6 +108,10 @@ def initial_scan(root_folder: str):
 # -------------------------------------------------------------------
 
 class DAQHandler(FileSystemEventHandler):
+    def __init__(self, watch_folder: str):
+        super().__init__()
+        self.watch_folder = watch_folder
+
     def on_created(self, event):
         if event.is_directory:
             return
@@ -130,6 +140,8 @@ class DAQHandler(FileSystemEventHandler):
                 digitizer = extract_digitizer_info(path)
                 if digitizer:
                     update_digitizer(run_name, digitizer)
+                config_dir = Path(self.watch_folder) / CONFIG_REF_DIR_NAME
+                report_parameter_diffs(path, str(config_dir))
 
         # STOP event
         elif is_end_file(path):
@@ -187,7 +199,7 @@ def main():
     # 2) Sync initial scan into the sheet
     print("\n=== Initial Scan & Sheet Sync ===")
     for start_dt, stop_dt, run_name, run_folder in runs:
-        print(f"SYNC  {run_name}: START={start_dt:%Y-%m-%d %H:%M:%S}  STOP={stop_dt or '(none)'}")
+        print(f"\nSYNC  {run_name}: START={start_dt:%Y-%m-%d %H:%M:%S}  STOP={stop_dt or '(none)'}")
         row = find_run_row(run_name)
 
         if row is None:
@@ -200,12 +212,14 @@ def main():
         # populate DAQ_PC column if blank
         update_pc_name(run_name, COMPUTER_NAME)
         settings_path = os.path.join(run_folder, 'settings.xml')
+        config_dir    = Path(watch_folder) / CONFIG_REF_DIR_NAME
+        report_parameter_diffs(str(settings_path), str(config_dir))
         digitizer = extract_digitizer_info(settings_path)
         if digitizer:
             update_digitizer(run_name, digitizer)
 
     # 3) Start live monitoring
-    handler  = DAQHandler()
+    handler  = DAQHandler(watch_folder)
     observer = Observer()
     observer.schedule(handler, path=watch_folder, recursive=True)
     observer.start()
