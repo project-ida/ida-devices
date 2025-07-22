@@ -138,7 +138,7 @@ def find_run_rows(run_name: str) -> List[int]:
 
     rows: List[int] = []
     for sheet_row, row in enumerate(data_rows, start=HEADER_ROW + 1):
-        has_id   = row[COL_ID    - 1].strip()
+        has_id   = row[COL_ID       - 1].strip()
         has_name = row[COL_RUN_NAME - 1].strip() == run_name
         if has_id and has_name:
             rows.append(sheet_row)
@@ -208,9 +208,10 @@ def update_setup_time(run_name: str, setup_dt: datetime) -> None:
 
 def update_end_time(run_name: str, end_dt: datetime) -> None:
     """
-    Write the End timestamp into *every* master row matching `run_name`,
-    but only if the cell is currently blank. Pulls all matching rows via
-    `find_run_rows()`, retries transient API errors, and syncs in-memory.
+    Write the End timestamp into only the *last* master row matching `run_name`,
+    but only if that cell is currently blank. Uses `find_run_rows()` to locate
+    all master rows, picks the final one, retries transient API errors, and
+    syncs the in-memory cache.
 
     Args:
         run_name: the run folder name to match in the sheet.
@@ -223,20 +224,24 @@ def update_end_time(run_name: str, end_dt: datetime) -> None:
     if not isinstance(end_dt, datetime):
         raise TypeError("end_dt must be a datetime instance")
 
-    val = end_dt.strftime('%Y-%m-%d %H:%M:%S')
-    col = COL_END
-
-    # Get all master rows (with non-blank ID + matching name)
     rows = find_run_rows(run_name)
-    for sheet_row in rows:
-        mem_idx = sheet_row - HEADER_ROW - 1
-        # Skip if End column already populated
-        if data_rows[mem_idx][col - 1].strip():
-            continue
+    if not rows:
+        # no master rows to update
+        return
 
-        # Write to sheet with retry, then update memory
-        _retry_api_call(ws.update_cell, sheet_row, col, val)
-        data_rows[mem_idx][col - 1] = val
+    # target only the last master row
+    sheet_row = rows[-1]
+    mem_idx   = sheet_row - HEADER_ROW - 1
+    col       = COL_END
+
+    # skip if already populated
+    if data_rows[mem_idx][col - 1].strip():
+        return
+
+    val = end_dt.strftime('%Y-%m-%d %H:%M:%S')
+    # write with retry, then update memory
+    _retry_api_call(ws.update_cell, sheet_row, col, val)
+    data_rows[mem_idx][col - 1] = val
 
 
 def update_pc_name(run_name: str, pc_name: str) -> None:
