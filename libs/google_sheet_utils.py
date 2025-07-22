@@ -26,6 +26,7 @@ import json
 import time
 from typing import List, Optional
 from datetime import datetime
+from typing import List, Optional
 
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
@@ -122,6 +123,28 @@ def find_run_row(run_name: str) -> Optional[int]:
             return sheet_row
     return None
 
+
+def find_run_rows(run_name: str) -> List[int]:
+    """
+    Return all 1-based sheet row indices where:
+      • the 'Run Name' column equals `run_name`, and
+      • the 'ID' column is non-blank.
+
+    Raises:
+        ValueError: if `run_name` is not a non-empty string.
+    """
+    if not isinstance(run_name, str) or not run_name.strip():
+        raise ValueError("run_name must be a non-empty string")
+
+    rows: List[int] = []
+    for sheet_row, row in enumerate(data_rows, start=HEADER_ROW + 1):
+        has_id   = row[COL_ID    - 1].strip()
+        has_name = row[COL_RUN_NAME - 1].strip() == run_name
+        if has_id and has_name:
+            rows.append(sheet_row)
+    return rows
+
+
 def get_last_row() -> int:
     """
     Return the last sheet row number that has a non-blank ID.
@@ -185,21 +208,36 @@ def update_setup_time(run_name: str, setup_dt: datetime) -> None:
 
 def update_end_time(run_name: str, end_dt: datetime) -> None:
     """
-    Overwrite the 'End' cell for the given run, in both sheet and memory,
-    but only if it’s currently blank.
-    """
-    row_idx = find_run_row(run_name)
-    if row_idx is None:
-        raise ValueError(f"Run '{run_name}' not found")
+    Write the End timestamp into *every* master row matching `run_name`,
+    but only if the cell is currently blank. Pulls all matching rows via
+    `find_run_rows()`, retries transient API errors, and syncs in-memory.
 
-    # DON’T overwrite if already present
-    current = data_rows[row_idx - HEADER_ROW - 1][COL_END - 1].strip()
-    if current:
-        return
+    Args:
+        run_name: the run folder name to match in the sheet.
+        end_dt:   the datetime to write (must be a datetime instance).
+
+    Raises:
+        ValueError: if `run_name` is invalid.
+        TypeError: if `end_dt` is not a datetime.
+    """
+    if not isinstance(end_dt, datetime):
+        raise TypeError("end_dt must be a datetime instance")
 
     val = end_dt.strftime('%Y-%m-%d %H:%M:%S')
-    _retry_api_call(ws.update_cell, row_idx, COL_END, val)
-    data_rows[row_idx - HEADER_ROW - 1][COL_END - 1] = val
+    col = COL_END
+
+    # Get all master rows (with non-blank ID + matching name)
+    rows = find_run_rows(run_name)
+    for sheet_row in rows:
+        mem_idx = sheet_row - HEADER_ROW - 1
+        # Skip if End column already populated
+        if data_rows[mem_idx][col - 1].strip():
+            continue
+
+        # Write to sheet with retry, then update memory
+        _retry_api_call(ws.update_cell, sheet_row, col, val)
+        data_rows[mem_idx][col - 1] = val
+
 
 def update_pc_name(run_name: str, pc_name: str) -> None:
     """
