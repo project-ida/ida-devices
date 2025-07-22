@@ -47,6 +47,8 @@ try:
         SETUP_HEADER   = cols['setup_header']
         END_HEADER     = cols['end_header']
         DAQ_PC_HEADER  = cols['daq_laptop_name_header']
+        DIGITIZER_HEADER = cols['digitizer_header']
+
 except Exception as e:
     raise RuntimeError(f"Failed to load sheet config from {CONFIG_FILE}: {e}")
 
@@ -76,6 +78,7 @@ COL_RUN_NAME = header_to_col[RUN_HEADER]
 COL_SETUP    = header_to_col[SETUP_HEADER]
 COL_END      = header_to_col[END_HEADER]
 COL_DAQ_PC   = header_to_col[DAQ_PC_HEADER]
+COL_DIGITIZER    = header_to_col[DIGITIZER_HEADER]
 
 # rows below the header, zero-indexed
 data_rows = all_rows[HEADER_ROW:]
@@ -259,3 +262,22 @@ def update_pc_name(run_name: str, pc_name: str) -> None:
 
     _retry_api_call(ws.update_cell, row_idx, COL_DAQ_PC, pc_name)
     data_rows[row_idx - HEADER_ROW - 1][COL_DAQ_PC - 1] = pc_name
+
+def update_digitizer(run_name: str, digitizer: str) -> None:
+    """
+    If the 'Digitizer' cell is blank, write `digitizer`.
+    Never overwrite an existing value.
+    """
+    if not isinstance(digitizer, str) or not digitizer.strip():
+        return
+
+    row_idx = find_run_row(run_name)
+    if row_idx is None:
+        return
+
+    current = data_rows[row_idx - HEADER_ROW - 1][COL_DIGITIZER - 1].strip()
+    if current:
+        return
+
+    _retry_api_call(ws.update_cell, row_idx, COL_DIGITIZER, digitizer)
+    data_rows[row_idx - HEADER_ROW - 1][COL_DIGITIZER - 1] = digitizer

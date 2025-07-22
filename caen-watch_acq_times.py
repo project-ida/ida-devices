@@ -36,7 +36,11 @@ from libs.google_sheet_utils import (
     update_setup_time,
     update_end_time,
     update_pc_name,
+    update_digitizer,
 )
+# Import our settings_extras from libs/
+from libs.settings_extras import extract_digitizer_info
+
 
 # -------------------------------------------------------------------
 # Helper functions for scanning and processing run folders
@@ -123,6 +127,9 @@ class DAQHandler(FileSystemEventHandler):
                 else:
                     update_setup_time(run_name, start_dt)
                 update_pc_name(run_name, COMPUTER_NAME)
+                digitizer = extract_digitizer_info(path)
+                if digitizer:
+                    update_digitizer(run_name, digitizer)
 
         # STOP event
         elif is_end_file(path):
@@ -137,6 +144,9 @@ class DAQHandler(FileSystemEventHandler):
                 else:
                     update_end_time(run_name, stop_dt)
                 update_pc_name(run_name, COMPUTER_NAME)
+                digitizer = extract_digitizer_info(path)
+                if digitizer:
+                    update_digitizer(run_name, digitizer)
 
 # -------------------------------------------------------------------
 # Main
@@ -176,7 +186,7 @@ def main():
 
     # 2) Sync initial scan into the sheet
     print("\n=== Initial Scan & Sheet Sync ===")
-    for start_dt, stop_dt, run_name, _ in runs:
+    for start_dt, stop_dt, run_name, run_folder in runs:
         print(f"SYNC  {run_name}: START={start_dt:%Y-%m-%d %H:%M:%S}  STOP={stop_dt or '(none)'}")
         row = find_run_row(run_name)
 
@@ -189,6 +199,10 @@ def main():
 
         # populate DAQ_PC column if blank
         update_pc_name(run_name, COMPUTER_NAME)
+        settings_path = os.path.join(run_folder, 'settings.xml')
+        digitizer = extract_digitizer_info(settings_path)
+        if digitizer:
+            update_digitizer(run_name, digitizer)
 
     # 3) Start live monitoring
     handler  = DAQHandler()
