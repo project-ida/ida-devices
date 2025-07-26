@@ -54,10 +54,9 @@ def connect_to_db():
                 print(f"Sending alert after failing to connect to database {alert_after_retries} times: {e}")
                 send_telegram_alert(
                     f"*caen-rootprocessing failed:*\n"
-                    f"Cannot connect to the database after `{alert_after_retries}` attempts, including automatic WiFi resets.\n\n"
-                    f"_You may wish to manually reset the WiFi connection to speed up recovery._\n"
-                    f"However, the system will continue attempting reconnection on its own.\n\n"
+                    f"Cannot connect to the database after `{alert_after_retries}` attempts. Continuing to retry.\n\n"
                     f"⚠️ *Do not restart caen-rootprocessing.* It will automatically resume processing any queued files once the connection is restored."
+                    f"Try manually resetting the WiFi connection to speed up recovery.\n"
                 )
 
             print(f"Connection attempt {attempt + 1} failed: {e}. Retrying in 5s...")
