@@ -30,7 +30,7 @@ from psql_credentials import PGHOST, PGPORT, PGDATABASE, PGUSER, PGPASSWORD
 
 # Connect to PostgreSQL database
 def connect_to_db():
-    alert_after_retries = 3
+    alert_after_retries = 10
     max_retries = 1_000_000
 
     for attempt in range(max_retries):
