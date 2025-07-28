@@ -37,9 +37,10 @@ from libs.google_sheet_utils import (
     update_end_time,
     update_pc_name,
     update_digitizer,
+    update_config_files,
 )
 # Import our settings_extras from libs/
-from libs.settings_extras import extract_digitizer_info
+from libs.settings_extras import extract_digitizer_info, find_matching_config_files
 
 # Import our settings_validator from libs/
 from libs.settings_validator import report_parameter_diffs
@@ -142,6 +143,13 @@ class DAQHandler(FileSystemEventHandler):
                     update_digitizer(run_name, digitizer)
                 config_dir = Path(self.watch_folder) / CONFIG_REF_DIR_NAME
                 report_parameter_diffs(path, str(config_dir))
+                matches = find_matching_config_files(path, str(config_dir))
+                config_files = ','.join(matches)
+                if matches:
+                    update_config_files(run_name, config_files)
+                else:
+                    print(f"⚠️  No matching config files found for {run_name}")
+
 
         # STOP event
         elif is_end_file(path):
@@ -217,6 +225,15 @@ def main():
         digitizer = extract_digitizer_info(settings_path)
         if digitizer:
             update_digitizer(run_name, digitizer)
+
+        config_dir = Path(watch_folder) / CONFIG_REF_DIR_NAME
+        matches = find_matching_config_files(settings_path, str(config_dir))
+        config_files = ','.join(matches)
+        if matches:
+            update_config_files(run_name, config_files)
+        else:
+            print(f"⚠️  No matching config files found for {run_name}")
+
 
     # 3) Start live monitoring
     handler  = DAQHandler(watch_folder)

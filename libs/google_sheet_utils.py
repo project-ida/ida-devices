@@ -37,16 +37,17 @@ CONFIG_FILE = os.getenv('SHEET_CONFIG_PATH', 'config/google_sheet_config.json')
 try:
     with open(CONFIG_FILE, 'r') as cf:
         cfg = json.load(cf)
-        SPREADSHEET_ID = cfg['spreadsheet_id']
-        SHEET_NAME     = cfg['sheet_name']
-        HEADER_ROW     = cfg.get('header_row', 1)
-        cols           = cfg['columns']
-        ID_HEADER      = cols['id_header']
-        RUN_HEADER     = cols['google_drive_data_folders_header']
-        SETUP_HEADER   = cols['setup_header']
-        END_HEADER     = cols['end_header']
-        DAQ_PC_HEADER  = cols['daq_laptop_name_header']
+        SPREADSHEET_ID   = cfg['spreadsheet_id']
+        SHEET_NAME       = cfg['sheet_name']
+        HEADER_ROW       = cfg.get('header_row', 1)
+        cols             = cfg['columns']
+        ID_HEADER        = cols['id_header']
+        RUN_HEADER       = cols['google_drive_data_folders_header']
+        SETUP_HEADER     =  cols['setup_header']
+        END_HEADER       = cols['end_header']
+        DAQ_PC_HEADER    = cols['daq_laptop_name_header']
         DIGITIZER_HEADER = cols['digitizer_header']
+        CONFIG_HEADER    = cols['compas_config_file_header']
 
 except Exception as e:
     raise RuntimeError(f"Failed to load sheet config from {CONFIG_FILE}: {e}")
@@ -78,6 +79,7 @@ COL_SETUP     = header_to_col[SETUP_HEADER]
 COL_END       = header_to_col[END_HEADER]
 COL_DAQ_PC    = header_to_col[DAQ_PC_HEADER]
 COL_DIGITIZER = header_to_col[DIGITIZER_HEADER]
+COL_CONFIG    = header_to_col[CONFIG_HEADER]
 
 # rows below the header, zero-indexed
 data_rows = all_rows[HEADER_ROW:]
@@ -280,3 +282,23 @@ def update_digitizer(run_name: str, digitizer: str) -> None:
 
     _retry_api_call(ws.update_cell, row_idx, COL_DIGITIZER, digitizer)
     data_rows[row_idx - HEADER_ROW - 1][COL_DIGITIZER - 1] = digitizer
+
+def update_config_files(run_name: str, config_files: str) -> None:
+    """
+    If the 'Compas configuration file (digitizer settings)' cell is blank,
+    write `config_files` (comma-separated filenames). Never overwrite existing.
+    """
+    if not isinstance(config_files, str) or not config_files.strip():
+        return
+
+    row_idx = find_run_row(run_name)
+    if row_idx is None:
+        return
+
+    # Use the same column as DIGITIZER_HEADER
+    current = data_rows[row_idx - HEADER_ROW - 1][COL_CONFIG - 1].strip()
+    if current:
+        return
+
+    _retry_api_call(ws.update_cell, row_idx, COL_CONFIG, config_files)
+    data_rows[row_idx - HEADER_ROW - 1][COL_CONFIG - 1] = config_files

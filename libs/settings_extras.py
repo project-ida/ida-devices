@@ -8,7 +8,8 @@ Now prints a console warning if digitizer info can’t be extracted.
 
 import xml.etree.ElementTree as ET
 from pathlib import Path
-from typing import Optional
+from typing import Optional, List
+from libs.settings_validator import _load_parameter_map
 
 
 def extract_digitizer_info(settings_path: str) -> Optional[str]:
@@ -45,3 +46,29 @@ def extract_digitizer_info(settings_path: str) -> Optional[str]:
         return None
 
     return f"{model} ({serial})"
+
+
+def find_matching_config_files(settings_path: str, config_folder: str) -> List[str]:
+    """
+    Returns a list of XML filenames in the config_folder whose <parameters>
+    exactly match those in settings_path.
+    """
+    sfile = Path(settings_path)
+    cdir = Path(config_folder)
+    if not sfile.is_file() or not cdir.is_dir():
+        return []
+    try:
+        s_map, _ = _load_parameter_map(sfile)
+    except Exception as e:
+        print(f"⚠️  Cannot load parameters from {settings_path}: {e}")
+        return []
+
+    matches: List[str] = []
+    for ref in sorted(cdir.glob('*.xml')):
+        try:
+            r_map, _ = _load_parameter_map(ref)
+        except Exception:
+            continue
+        if r_map == s_map:
+            matches.append(ref.name)
+    return matches
