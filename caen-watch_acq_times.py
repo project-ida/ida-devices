@@ -126,7 +126,6 @@ class DAQHandler(FileSystemEventHandler):
         """
         if event.is_directory:
             return
-        # Skip hidden files/folders if needed…
         name = os.path.basename(event.src_path)
         if name.startswith('.'):
             return
@@ -158,11 +157,13 @@ class DAQHandler(FileSystemEventHandler):
                     # In case we missed START
                     self.sheet.append_run(run_name, None, stop_dt)
                 else:
-                    self.sheet.update_field_if_blank(run_name, stop_dt, self.sheet.COL_END)
-                self.sheet.update_field_if_blank(run_name, COMPUTER_NAME, self.sheet.COL_DAQ_PC)
-                digitizer = extract_digitizer_info(path)
-                if digitizer:
-                    self.sheet.update_field_if_blank(run_name, digitizer, self.sheet.COL_DIGITIZER)
+                    digitizer = extract_digitizer_info(path)
+                    values = {
+                        self.sheet.COL_END: stop_dt,
+                        self.sheet.COL_DAQ_PC: COMPUTER_NAME,
+                        self.sheet.COL_DIGITIZER: digitizer
+                    }
+                    self.sheet.update_run_row(run_name, values)
 
 # -------------------------------------------------------------------
 # Main
@@ -251,8 +252,7 @@ def process_run_folder(
     stop_dt: Optional[datetime] = None
 ) -> None:
     """
-    Process a run folder: update the Google Sheet with run info, digitizer info,
-    config matches, and parameter diffs.
+    Process a run folder and atomically update the Google Sheet with all run info.
 
     Parameters:
     run_name (str): Name of the run.
@@ -266,21 +266,20 @@ def process_run_folder(
     row = sheet.find_run_row(run_name)
     if row is None:
         sheet.append_run(run_name, start_dt, stop_dt)
-    else:
-        if start_dt:
-            sheet.update_field_if_blank(run_name, start_dt, sheet.COL_SETUP)
-        if stop_dt:
-            sheet.update_field_if_blank(run_name, stop_dt, sheet.COL_END)
-    sheet.update_field_if_blank(run_name, COMPUTER_NAME, sheet.COL_DAQ_PC)
     digitizer = extract_digitizer_info(settings_path)
-    if digitizer:
-        sheet.update_field_if_blank(run_name, digitizer, sheet.COL_DIGITIZER)
-    report_parameter_diffs(settings_path, str(config_dir))
     matches = find_matching_config_files(settings_path, str(config_dir))
-    config_files = ','.join(matches)
-    if matches:
-        sheet.update_field_if_blank(run_name, config_files, sheet.COL_CONFIG)
-    else:
+    config_files = ','.join(matches) if matches else ''
+    # Prepare all values to update
+    values = {
+        sheet.COL_SETUP: start_dt,
+        sheet.COL_END: stop_dt,
+        sheet.COL_DAQ_PC: COMPUTER_NAME,
+        sheet.COL_DIGITIZER: digitizer,
+        sheet.COL_CONFIG: config_files
+    }
+    sheet.update_run_row(run_name, values)
+    report_parameter_diffs(settings_path, str(config_dir))
+    if not matches:
         logging.warning(f"⚠️  No matching config files found for {run_name}")
 
 if __name__ == '__main__':

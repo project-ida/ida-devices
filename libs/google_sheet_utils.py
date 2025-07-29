@@ -24,7 +24,7 @@ Requirements:
 import os
 import json
 import time
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 from datetime import datetime
 
 import gspread
@@ -105,23 +105,35 @@ class GoogleSheet:
         self._retry_api_call(self.ws.append_row, new_row, value_input_option='RAW')
         self.data_rows.append(new_row)
 
-    def update_field_if_blank(self, run_name: str, value, col_idx: int) -> None:
+
+    def update_run_row(self, run_name: str, values: Dict[int, Any]) -> None:
+        """
+        Atomically update multiple fields for a run in the sheet.
+
+        Parameters:
+        run_name (str): The run name to update.
+        values (Dict[int, Any]): Mapping of column indices to new values.
+        """
         row_idx = self.find_run_row(run_name)
         if row_idx is None:
             return
-        self._write_if_blank(row_idx, col_idx, value)
-
-    def _write_if_blank(self, row_idx: int, col_idx: int, value) -> None:
-        if value is None:
-            return
-        if isinstance(value, datetime):
-            value = value.strftime('%Y-%m-%d %H:%M:%S')
-        elif not isinstance(value, str):
-            return
-        elif not value.strip():
-            return
         mem_idx = row_idx - self.header_row - 1
-        if self.data_rows[mem_idx][col_idx - 1].strip():
-            return
-        self._retry_api_call(self.ws.update_cell, row_idx, col_idx, value)
-        self.data_rows[mem_idx][col_idx - 1] = value
+        row = self.data_rows[mem_idx]
+        updated = False
+        for col_idx, value in values.items():
+            if value is None:
+                continue
+            if isinstance(value, datetime):
+                value = value.strftime('%Y-%m-%d %H:%M:%S')
+            elif not isinstance(value, str):
+                value = str(value)
+            if not row[col_idx - 1].strip():
+                row[col_idx - 1] = value
+                updated = True
+        if updated:
+            # Update the entire row in the sheet
+            self._retry_api_call(
+                self.ws.update,
+                f"A{row_idx}:{chr(64+len(row))}{row_idx}",
+                [row]
+            )
