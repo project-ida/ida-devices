@@ -34,6 +34,12 @@ class GoogleSheet:
     """
     Utility class for interacting with a Google Sheet for DAQ run monitoring.
     Handles authentication, reading, appending, and updating rows.
+
+    Note:
+        This class maintains an in-memory cache of sheet rows (`self.data_rows`)
+        that is only updated by this process. If the sheet is edited externally
+        (e.g., by another user or process), the cache may become stale and
+        inconsistencies may occur. For best results, avoid concurrent edits.
     """
     def __init__(self, config_file: str = None, creds_file: str = None):
         """
