@@ -241,12 +241,19 @@ def _extract_sections(xml_path: Path) -> Dict:
     xml_path (Path): Path to the XML file.
 
     Returns:
-    Dict: Dictionary of extracted sections.
+    Dict: Dictionary of extracted sections, or empty dict if parsing fails.
     """
-    tree = ET.parse(xml_path)
-    root = tree.getroot()
-    out: Dict = {}
+    try:
+        tree = ET.parse(xml_path)
+        root = tree.getroot()
+    except ET.ParseError as e:
+        logging.warning(f"⚠️  Malformed XML in '{xml_path}': {e}")
+        return {}
+    except Exception as e:
+        logging.warning(f"⚠️  Error reading XML in '{xml_path}': {e}")
+        return {}
 
+    out: Dict = {}
     out.update(_extract_board_section(root))
     out['parameters'] = _extract_parameters_section(root)
     out['channels'] = _extract_channels_section(root)

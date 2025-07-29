@@ -15,7 +15,6 @@ import time
 import logging
 import argparse
 import socket
-import subprocess
 from datetime import datetime
 from typing import Optional, List, Tuple, Dict, Any
 
@@ -309,7 +308,9 @@ class DAQHandler(FileSystemEventHandler):
                     # In case we missed START
                     self.sheet.append_run(run_name, None, stop_dt)
                 else:
-                    digitizer = extract_digitizer_info(str(path))
+                    # Correct: get digitizer info from settings.xml, not the .txt file
+                    settings_path = run_folder / SETTINGS_FILENAME
+                    digitizer = extract_digitizer_info(str(settings_path))
                     values = {
                         self.sheet.COL_END: stop_dt,
                         self.sheet.COL_DAQ_PC: COMPUTER_NAME,

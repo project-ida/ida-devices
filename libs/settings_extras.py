@@ -125,8 +125,11 @@ def _load_reference_parameter_maps(config_dir: Path) -> List[Tuple[Path, Dict[st
         try:
             r_map, _ = _load_parameter_map(ref)
             refs.append((ref, r_map))
-        except Exception:
-            continue
+        except Exception as e:
+            # Log the exception for better traceability and debugging
+            logging.warning(
+                f"⚠️  Failed to load parameter map from '{ref}': {e}"
+            )
     return refs
 
 def _is_exact_match(s_map: Dict[str, str], r_map: Dict[str, str]) -> bool:
