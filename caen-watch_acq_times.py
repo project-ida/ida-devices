@@ -68,7 +68,7 @@ def is_settings_file(path: Path) -> bool:
 def is_end_file(path: Path) -> bool:
     """
     Returns True if the given path is the expected .txt end file for a run.
-    We assume the .txt file is named <run_name>.txt
+    The .txt file must be named <run_folder>.txt (case-insensitive).
 
     Parameters:
     path (Path): The file path to check.
@@ -76,9 +76,10 @@ def is_end_file(path: Path) -> bool:
     Returns:
     bool: True if the file is the expected end file, False otherwise.
     """
-    folder = path.parent
-    name = folder.name
-    return path.name.lower() == f'{name.lower()}.txt'
+    return (
+        path.suffix.lower() == '.txt'
+        and path.stem.lower() == path.parent.name.lower()
+    )
 
 def estimate_start(path: Path) -> Optional[datetime]:
     """
