@@ -13,126 +13,6 @@ ENTRY_TAG = 'entry'
 KEY_TAG = 'key'
 VALUE_TAG = 'value'
 
-def _extract_sections(xml_path: Path) -> Dict:
-    """
-    Extract relevant sections from an XML file for comparison.
-
-    Parameters:
-    xml_path (Path): Path to the XML file.
-
-    Returns:
-    Dict: Dictionary of extracted sections.
-    """
-    tree = ET.parse(xml_path)
-    root = tree.getroot()
-    out: Dict = {}
-
-    out.update(_extract_board_section(root))
-    out['parameters'] = _extract_parameters_section(root)
-    out['channels'] = _extract_channels_section(root)
-    out.update(_extract_subtrees(root, (
-        'acquisitionMemento', 'timeCorrelationMemento', 'virtualChannelsMemento'
-    )))
-    return out
-
-def _extract_board_section(root: ET.Element) -> Dict[str, str]:
-    """
-    Extract board information from the XML root.
-
-    Parameters:
-    root (ET.Element): The root XML element.
-
-    Returns:
-    Dict[str, str]: Board fields and their values.
-    """
-    out = {}
-    board = root.find('board')
-    if board is not None:
-        for tag in ('id', 'modelName', 'serialNumber', 'label'):
-            el = board.find(tag)
-            out[f'board.{tag}'] = (el.text or '').strip()
-    return out
-
-def _extract_parameters_section(root: ET.Element) -> Dict[str, str]:
-    """
-    Extract parameters from the XML root.
-
-    Parameters:
-    root (ET.Element): The root XML element.
-
-    Returns:
-    Dict[str, str]: Parameter keys and values.
-    """
-    params = {}
-    for entry in root.findall(f'.//{PARAMETERS_TAG}/{ENTRY_TAG}'):
-        key = entry.findtext(KEY_TAG, '').strip()
-        val_el = entry.find(VALUE_TAG)
-        if val_el is not None:
-            nested = val_el.findtext(VALUE_TAG)
-            val = nested if nested is not None else (val_el.text or '')
-        else:
-            val = ''
-        params[key] = val.strip()
-    return params
-
-def _extract_channels_section(root: ET.Element) -> Dict[str, str]:
-    """
-    Extract channel information from the XML root.
-
-    Parameters:
-    root (ET.Element): The root XML element.
-
-    Returns:
-    Dict[str, str]: Channel IDs and their XML string.
-    """
-    chans = {}
-    for ch in root.findall('.//virtualChannelsMemento/channel'):
-        ch_id = ch.get('id')
-        chans[ch_id] = ET.tostring(ch, encoding='unicode')
-    return chans
-
-def _extract_subtrees(root: ET.Element, sections: Tuple[str, ...]) -> Dict[str, str]:
-    """
-    Extract raw XML for specified subtrees.
-
-    Parameters:
-    root (ET.Element): The root XML element.
-    sections (Tuple[str, ...]): Section names to extract.
-
-    Returns:
-    Dict[str, str]: Section names and their XML string.
-    """
-    out = {}
-    for section in sections:
-        el = root.find(section)
-        out[section] = ET.tostring(el, encoding='unicode') if el is not None else ''
-    return out
-
-
-def _extract_simple_fields_from_subtree(xml_text: str, wanted_fields=('runId',)) -> Dict[str,str]:
-    """
-    Extract simple fields from an XML subtree.
-
-    Parameters:
-    xml_text (str): XML text to parse.
-    wanted_fields (tuple): Fields to extract.
-
-    Returns:
-    Dict[str, str]: Mapping of field names to values.
-    """
-    if not xml_text:
-        return {}
-    try:
-        root = ET.fromstring(xml_text)
-    except ET.ParseError:
-        return {}
-    out = {}
-    for child in root:
-        if child.tag in wanted_fields:
-            out[child.tag] = (child.text or '').strip()
-    return out
-
-
 def validate_against_references(current_path: str, config_folder: str) -> List[str]:
     """
     Compare current settings.xml to each reference XML in config_folder.
@@ -261,31 +141,6 @@ def report_reference_comparison(
     else:
         logging.warning("\n⚠️ No exact matches found.")
 
-def _load_parameter_map(xml_path: Path) -> Tuple[dict, List[str]]:
-    """
-    Parse the XML at xml_path and return a parameter map and raw file lines.
-
-    Parameters:
-    xml_path (Path): Path to the XML file.
-
-    Returns:
-    Tuple[dict, List[str]]: Parameter map and list of file lines.
-    """
-    text = xml_path.read_text(encoding='utf-8').splitlines()
-    tree = ET.fromstring("\n".join(text))
-    params = {}
-    for entry in tree.findall(f'.//{PARAMETERS_TAG}/{ENTRY_TAG}'):
-        key = entry.findtext(KEY_TAG, '').strip()
-        # value might be nested <value><value>…</value></value>
-        val_el = entry.find(VALUE_TAG)
-        if val_el is not None:
-            nested = val_el.findtext(VALUE_TAG)
-            val = (nested if nested is not None else val_el.text or '').strip()
-        else:
-            val = ''
-        params[key] = val
-    return params, text
-
 def report_parameter_diffs(
     settings_path: str,
     config_folder: str,
@@ -318,6 +173,9 @@ def report_parameter_diffs(
 
     # Load master parameter map
     s_map, s_lines = _load_parameter_map(sfile)
+    if not s_map:
+        logging.warning(f"⚠️  Skipping diff: '{settings_path}' could not be parsed or has no parameters.")
+        return
 
     matches: List[str] = []
     diffs_map: dict[str, List[tuple[int, str, str, str]]] = {}
@@ -375,3 +233,152 @@ def report_parameter_diffs(
             if more > 0:
                 logging.info(f"  ...and {more} more differences...")
 
+def _extract_sections(xml_path: Path) -> Dict:
+    """
+    Extract relevant sections from an XML file for comparison.
+
+    Parameters:
+    xml_path (Path): Path to the XML file.
+
+    Returns:
+    Dict: Dictionary of extracted sections.
+    """
+    tree = ET.parse(xml_path)
+    root = tree.getroot()
+    out: Dict = {}
+
+    out.update(_extract_board_section(root))
+    out['parameters'] = _extract_parameters_section(root)
+    out['channels'] = _extract_channels_section(root)
+    out.update(_extract_subtrees(root, (
+        'acquisitionMemento', 'timeCorrelationMemento', 'virtualChannelsMemento'
+    )))
+    return out
+
+def _extract_board_section(root: ET.Element) -> Dict[str, str]:
+    """
+    Extract board information from the XML root.
+
+    Parameters:
+    root (ET.Element): The root XML element.
+
+    Returns:
+    Dict[str, str]: Board fields and their values.
+    """
+    out = {}
+    board = root.find('board')
+    if board is not None:
+        for tag in ('id', 'modelName', 'serialNumber', 'label'):
+            el = board.find(tag)
+            out[f'board.{tag}'] = (el.text or '').strip()
+    return out
+
+def _extract_parameters_section(root: ET.Element) -> Dict[str, str]:
+    """
+    Extract parameters from the XML root.
+
+    Parameters:
+    root (ET.Element): The root XML element.
+
+    Returns:
+    Dict[str, str]: Parameter keys and values.
+    """
+    params = {}
+    for entry in root.findall(f'.//{PARAMETERS_TAG}/{ENTRY_TAG}'):
+        key = entry.findtext(KEY_TAG, '').strip()
+        val_el = entry.find(VALUE_TAG)
+        if val_el is not None:
+            nested = val_el.findtext(VALUE_TAG)
+            val = nested if nested is not None else (val_el.text or '')
+        else:
+            val = ''
+        params[key] = val.strip()
+    return params
+
+def _extract_channels_section(root: ET.Element) -> Dict[str, str]:
+    """
+    Extract channel information from the XML root.
+
+    Parameters:
+    root (ET.Element): The root XML element.
+
+    Returns:
+    Dict[str, str]: Channel IDs and their XML string.
+    """
+    chans = {}
+    for ch in root.findall('.//virtualChannelsMemento/channel'):
+        ch_id = ch.get('id')
+        chans[ch_id] = ET.tostring(ch, encoding='unicode')
+    return chans
+
+def _extract_subtrees(root: ET.Element, sections: Tuple[str, ...]) -> Dict[str, str]:
+    """
+    Extract raw XML for specified subtrees.
+
+    Parameters:
+    root (ET.Element): The root XML element.
+    sections (Tuple[str, ...]): Section names to extract.
+
+    Returns:
+    Dict[str, str]: Section names and their XML string.
+    """
+    out = {}
+    for section in sections:
+        el = root.find(section)
+        out[section] = ET.tostring(el, encoding='unicode') if el is not None else ''
+    return out
+
+
+def _extract_simple_fields_from_subtree(xml_text: str, wanted_fields=('runId',)) -> Dict[str,str]:
+    """
+    Extract simple fields from an XML subtree.
+
+    Parameters:
+    xml_text (str): XML text to parse.
+    wanted_fields (tuple): Fields to extract.
+
+    Returns:
+    Dict[str, str]: Mapping of field names to values.
+    """
+    if not xml_text:
+        return {}
+    try:
+        root = ET.fromstring(xml_text)
+    except ET.ParseError:
+        return {}
+    out = {}
+    for child in root:
+        if child.tag in wanted_fields:
+            out[child.tag] = (child.text or '').strip()
+    return out
+
+def _load_parameter_map(xml_path: Path) -> Tuple[Dict[str, str], List[str]]:
+    """
+    Parse the XML at xml_path and return a parameter map and raw file lines.
+
+    Parameters:
+    xml_path (Path): Path to the XML file.
+
+    Returns:
+    Tuple[Dict[str, str], List[str]]: Parameter map and list of file lines.
+    """
+    text = xml_path.read_text(encoding='utf-8').splitlines()
+    try:
+        tree = ET.fromstring("\n".join(text))
+    except ET.ParseError as e:
+        logging.warning(f"⚠️  Malformed XML in '{xml_path}': {e}")
+        return {}, text
+    except Exception as e:
+        logging.warning(f"⚠️  Error reading XML in '{xml_path}': {e}")
+        return {}, text
+    params: Dict[str, str] = {}
+    for entry in tree.findall(f'.//{PARAMETERS_TAG}/{ENTRY_TAG}'):
+        key = entry.findtext(KEY_TAG, '').strip()
+        val_el = entry.find(VALUE_TAG)
+        if val_el is not None:
+            nested = val_el.findtext(VALUE_TAG)
+            val = (nested if nested is not None else val_el.text or '').strip()
+        else:
+            val = ''
+        params[key] = val
+    return params, text

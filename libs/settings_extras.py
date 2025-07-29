@@ -42,6 +42,31 @@ def extract_digitizer_info(settings_path: str) -> Optional[str]:
 
     return _extract_board_info(root, settings_path)
 
+def find_matching_config_files(settings_path: str, config_folder: str) -> List[str]:
+    """
+    Find XML files in config_folder whose <parameters> exactly match those in settings_path.
+
+    Parameters:
+    settings_path (str): Path to the settings.xml file.
+    config_folder (str): Path to the folder containing reference config XMLs.
+
+    Returns:
+    List[str]: List of matching config filenames.
+    """
+    sfile = Path(settings_path)
+    cdir = Path(config_folder)
+    if not sfile.is_file() or not cdir.is_dir():
+        return []
+    try:
+        s_map, _ = _load_parameter_map(sfile)
+    except Exception as e:
+        logging.warning(f"⚠️  Cannot load parameters from {settings_path}: {e}")
+        return []
+
+    refs = _load_reference_parameter_maps(cdir)
+    matches = [ref.name for ref, r_map in refs if _is_exact_match(s_map, r_map)]
+    return matches
+
 def _parse_settings_xml(settings_path: str) -> Optional[ET.Element]:
     """
     Parse the settings.xml file and return the root element.
@@ -84,32 +109,6 @@ def _extract_board_info(root: ET.Element, settings_path: str) -> Optional[str]:
         return None
 
     return f"{model} ({serial})"
-
-
-def find_matching_config_files(settings_path: str, config_folder: str) -> List[str]:
-    """
-    Find XML files in config_folder whose <parameters> exactly match those in settings_path.
-
-    Parameters:
-    settings_path (str): Path to the settings.xml file.
-    config_folder (str): Path to the folder containing reference config XMLs.
-
-    Returns:
-    List[str]: List of matching config filenames.
-    """
-    sfile = Path(settings_path)
-    cdir = Path(config_folder)
-    if not sfile.is_file() or not cdir.is_dir():
-        return []
-    try:
-        s_map, _ = _load_parameter_map(sfile)
-    except Exception as e:
-        logging.warning(f"⚠️  Cannot load parameters from {settings_path}: {e}")
-        return []
-
-    refs = _load_reference_parameter_maps(cdir)
-    matches = [ref.name for ref, r_map in refs if _is_exact_match(s_map, r_map)]
-    return matches
 
 def _load_reference_parameter_maps(config_dir: Path) -> List[Tuple[Path, Dict[str, str]]]:
     """
