@@ -294,23 +294,31 @@ def main():
             break
         print("Invalid input. Please enter 'y' or 'n'.")
 
+    # Prompt for file types to process
+    while True:
+        file_types = input("Process which file types? (1: .root only, 2: .root2 only, 3: both .root and .root2): ").strip()
+        if file_types in ['1', '2', '3']:
+            break
+        print("Invalid input. Please enter '1', '2', or '3'.")
+
     default_channel = 0  # Default channel number
 
     # Check if CSV exists
     if os.path.exists(csv_path):
         df = pd.read_csv(csv_path)
         total_files = len(df)
-        unprocessed_files = len(df[~df['processed']])
+        unprocessed_files = len(df[df['processed'] == False])
+        failed_files = len(df[df['processed'] == 'Failed'])
         try:
             channel_input = get_channel_number_from_filename(df.iloc[0]['filename'])
         except ValueError as e:
             print(f"Error with CSV file: {e}")
             sys.exit(1)
-        print(f"Found {total_files} files in {csv_path}, {unprocessed_files} remain to be processed.")
+        print(f"Found {total_files} files in {csv_path}, {unprocessed_files} remain to be processed, {failed_files} failed.")
         print()
 
         if unprocessed_files == 0:
-            print("✅ All files in processed_files.csv have already been processed.")
+            print("✅ All valid files in processed_files.csv have been processed or failed.")
             print("🗑️  If you want to start a new processing run, please delete the CSV file:")
             print(f"    {csv_path}")
             print("Then re-run this script to select a new folder and channel.")
@@ -353,14 +361,20 @@ def main():
             print(f"Error: {raw_folder} subfolder does not exist")
             return
         
-        # Build glob pattern to match files like *_CH0@*.root, *_CH1@*.root, etc.
-        patterns = [os.path.join(raw_folder, f"*_CH{ch}@*.root") for ch in channels]
+        # Build glob pattern based on user selection
+        if file_types == '1':
+            patterns = [os.path.join(raw_folder, f"*_CH{ch}@*.root") for ch in channels]
+        elif file_types == '2':
+            patterns = [os.path.join(raw_folder, f"*_CH{ch}@*.root2") for ch in channels]
+        else:  # file_types == '3'
+            patterns = [os.path.join(raw_folder, f"*_CH{ch}@*.root*") for ch in channels]
+
         files = []
         for pattern in patterns:
             files.extend(glob.glob(pattern))
 
         if not files:
-            print(f"No files with channel numbers {channels} and containing '.root' found in {raw_folder}")
+            print(f"No files with channel numbers {channels} and matching selected file types found in {raw_folder}")
             return
 
         # Sort files by number before .root
@@ -441,6 +455,8 @@ def main():
                         print("Updated processed status in CSV")
                         print()
                     else:
+                        df.at[index, 'processed'] = 'Failed'
+                        df.to_csv(csv_path, index=False)
                         continue
                 else:
                     print(f"File not found: {file_path}")
@@ -449,17 +465,27 @@ def main():
     finally:
         conn.close()
         print("Connection closed")
-        # Check for unprocessed files in the CSV
+        # Check for unprocessed and failed files in the CSV
         if os.path.exists(csv_path):
             df = pd.read_csv(csv_path)
-            unprocessed_files = df[~df['processed']]['filename'].tolist()
-            if unprocessed_files:
-                print("\n⚠️ The following files in processed_files.csv remain unprocessed:")
-                for file in unprocessed_files:
-                    print(f"  - {os.path.basename(file)}")
-                print(f"Total unprocessed files: {len(unprocessed_files)}")
+            unprocessed_files = df[df['processed'] == False]['filename'].tolist()
+            failed_files = df[df['processed'] == 'Failed']['filename'].tolist()
+            if unprocessed_files or failed_files:
+                if unprocessed_files:
+                    print("\n⚠️ The following files in processed_files.csv remain unprocessed:")
+                    for file in unprocessed_files:
+                        print(f"  - {os.path.basename(file)}")
+                    print(f"Total unprocessed files: {len(unprocessed_files)}")
+                if failed_files:
+                    print("\n⚠️ The following files in processed_files.csv failed processing (possibly incomplete or corrupted):")
+                    for file in failed_files:
+                        print(f"  - {os.path.basename(file)}")
+                    print(f"Total failed files: {len(failed_files)}")
             else:
-                print("\n✅ All files in processed_files.csv have been processed.")
+                print("\n✅ All files in processed_files.csv have been processed or failed.")
+            if not unprocessed_files:
+                print("\n🗑️ All valid files have been processed or failed. If you want to start a new processing run, please delete the CSV file:")
+                print(f"    {csv_path}")
         else:
             print(f"\n⚠️ No processed_files.csv found at {csv_path}")
 

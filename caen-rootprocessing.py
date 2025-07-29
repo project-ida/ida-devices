@@ -30,7 +30,7 @@ from psql_credentials import PGHOST, PGPORT, PGDATABASE, PGUSER, PGPASSWORD
 
 # Connect to PostgreSQL database
 def connect_to_db():
-    alert_after_retries = 3
+    alert_after_retries = 10
     max_retries = 1_000_000
 
     for attempt in range(max_retries):
@@ -53,11 +53,10 @@ def connect_to_db():
             if attempt == alert_after_retries:
                 print(f"Sending alert after failing to connect to database {alert_after_retries} times: {e}")
                 send_telegram_alert(
-                    "*caen-rootprocessing failed:*\n"
-                    "Cannot connect to the database after `{alert_after_retries}` attempts, including automatic WiFi resets.\n\n"
-                    "_You may wish to manually reset the WiFi connection to speed up recovery._\n"
-                    "However, the system will continue attempting reconnection on its own.\n\n"
-                    "⚠️ *Do not restart caen-rootprocessing.* It will automatically resume processing any queued files once the connection is restored."
+                    f"*caen-rootprocessing failed:*\n"
+                    f"Cannot connect to the database after `{alert_after_retries}` attempts. Continuing to retry.\n\n"
+                    f"⚠️ *Do not restart caen-rootprocessing.* It will automatically resume processing any queued files once the connection is restored."
+                    f"Try manually resetting the WiFi connection to speed up recovery.\n"
                 )
 
             print(f"Connection attempt {attempt + 1} failed: {e}. Retrying in 5s...")

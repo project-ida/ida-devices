@@ -110,6 +110,8 @@ def main():
         hat = mcc128(address)
         hat.a_in_mode_write(input_mode)
         hat.a_in_range_write(input_range)
+        # save the correct mask for later restarts
+        hat.channel_mask = channel_mask
         input('\nPress ENTER to continue ...')
         start_acquisition(hat, channel_mask, 0, scan_rate, options)
         logging.info("DAQ acquisition started. Press Ctrl-C to stop.")
@@ -154,7 +156,8 @@ def read_and_display_data(hat, num_channels, csv_handle, db_cloud, table_name, r
             if read_result.buffer_overrun:
                 logging.warning("Buffer overrun detected. Restarting acquisition.")
                 stop_and_cleanup(hat)
-                start_acquisition(hat, chan_list_to_mask(range(num_channels)), 0, 1000.0, OptionFlags.CONTINUOUS)
+                # reuse the original mask we saved on hat
+                start_acquisition(hat, hat.channel_mask, 0, 1000.0, OptionFlags.CONTINUOUS)
                 continue
 
             new_samples = np.array(read_result.data).reshape(-1, num_channels)
