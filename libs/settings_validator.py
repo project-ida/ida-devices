@@ -273,19 +273,32 @@ def report_parameter_diffs(
         r_map, _ = _load_parameter_map(ref)
         diffs: List[tuple[int, str, str, str]] = []
 
+        # Report parameters present in current but different or missing in reference
         for key, new_val in s_map.items():
             old_val = r_map.get(key)
-            if old_val is None or old_val == new_val:
-                continue
+            if old_val is None:
+                # Parameter missing in reference
+                lineno = next(
+                    (i+1 for i, ln in enumerate(s_lines)
+                     if f">{new_val}</value>" in ln),
+                    None
+                )
+                if lineno:
+                    diffs.append((lineno, key, "(missing in reference)", new_val))
+            elif old_val != new_val:
+                lineno = next(
+                    (i+1 for i, ln in enumerate(s_lines)
+                     if f">{new_val}</value>" in ln),
+                    None
+                )
+                if lineno:
+                    diffs.append((lineno, key, old_val, new_val))
 
-            # find line in settings.xml
-            lineno = next(
-                (i+1 for i, ln in enumerate(s_lines)
-                 if f">{new_val}</value>" in ln),
-                None
-            )
-            if lineno:
-                diffs.append((lineno, key, old_val, new_val))
+        # Report parameters present in reference but missing in current
+        for key, old_val in r_map.items():
+            if key not in s_map:
+                # Parameter missing in current file
+                diffs.append((None, key, old_val, "(missing in current)"))
 
         if not diffs:
             matches.append(ref.name)
@@ -299,8 +312,12 @@ def report_parameter_diffs(
         logging.warning(f"⚠️  Differences detected in: {', '.join(diffs_map.keys())}")
         for ref_name, diffs in diffs_map.items():
             logging.info(f"**{ref_name}**")
-            for lineno, key, old, new in diffs[:max_diffs]:
-                logging.info(f"  L{lineno:<4} {key:<24}: '{old}' → '{new}'")
+            for diff in diffs[:max_diffs]:
+                lineno, key, old, new = diff
+                if lineno is not None:
+                    logging.info(f"  L{lineno:<4} {key:<24}: '{old}' → '{new}'")
+                else:
+                    logging.info(f"       {key:<24}: '{old}' → '{new}'")
             more = len(diffs) - max_diffs
             if more > 0:
                 logging.info(f"  ...and {more} more differences...")
