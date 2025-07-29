@@ -154,10 +154,19 @@ class DAQHandler(FileSystemEventHandler):
     """
     Handles file system events for the DAQ directory, updating the Google Sheet as needed.
     """
-    def __init__(self, watch_folder: Path, sheet: GoogleSheet):
+    def __init__(self, watch_folder: Path, sheet: GoogleSheet, config_dir: Path):
+        """
+        Initialize the DAQHandler.
+
+        Parameters:
+        watch_folder (Path): The root folder being watched.
+        sheet (GoogleSheet): The GoogleSheet instance.
+        config_dir (Path): Path to the config directory.
+        """
         super().__init__()
         self.watch_folder = watch_folder
         self.sheet = sheet
+        self.config_dir = config_dir
 
     def on_created(self, event):
         """
@@ -181,12 +190,11 @@ class DAQHandler(FileSystemEventHandler):
             if start_dt:
                 clear_line()
                 logging.info(f"START {run_name}: {start_dt:%Y-%m-%d %H:%M:%S}")
-                config_dir = self.watch_folder / CONFIG_REF_DIR_NAME
                 process_run_folder(
                     run_name=run_name,
                     run_folder=run_folder,
                     sheet=self.sheet,
-                    config_dir=config_dir,
+                    config_dir=self.config_dir,
                     start_dt=start_dt
                 )
 
@@ -246,12 +254,14 @@ def main() -> None:
 
     sheet = GoogleSheet()
 
+    # Construct config_dir once here
+    config_dir = watch_folder_path / CONFIG_REF_DIR_NAME
+
     # Initial directory scan
     runs = initial_scan(watch_folder_path)
 
     # Sync initial scan into the sheet
     logging.info("=== Initial Scan & Sheet Sync ===")
-    config_dir = watch_folder_path / CONFIG_REF_DIR_NAME
     for start_dt, stop_dt, run_name, run_folder in runs:
         logging.info(
             f"SYNC  {run_name}: START={start_dt:%Y-%m-%d %H:%M:%S}  STOP={stop_dt or '(none)'}"
@@ -266,7 +276,7 @@ def main() -> None:
         )
 
     # Start live monitoring
-    handler = DAQHandler(watch_folder_path, sheet)
+    handler = DAQHandler(watch_folder_path, sheet, config_dir)
     observer = Observer()
     observer.schedule(handler, path=str(watch_folder_path), recursive=True)
     observer.start()
