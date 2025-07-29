@@ -243,9 +243,9 @@ def main() -> None:
                 watch_folder = input("Enter the DAQ folder to monitor: ").strip()
                 if Path(watch_folder).is_dir():
                     break
-                print(f"❌  '{watch_folder}' is not a valid directory. Please try again.")
+                logging.error(f"❌  '{watch_folder}' is not a valid directory. Please try again.")
         except (EOFError, KeyboardInterrupt):
-            print("\nNo folder provided—exiting.")
+            logging.info("No folder provided—exiting.")
             sys.exit(1)
 
     # final check
@@ -282,11 +282,11 @@ def main() -> None:
     observer = Observer()
     observer.schedule(handler, path=str(watch_folder_path), recursive=True)
     observer.start()
-    print(f"\nMonitoring '{watch_folder_path}' for new START/STOP events...")
+    logging.info(f"\nMonitoring '{watch_folder_path}' for new START/STOP events...")
 
-    # Simple spinner to show liveness
+    # Simple spinner to show liveness (keep using print for spinner)
     spinner = ['|', '/', '-', '\\']
-    idx     = 0
+    idx = 0
     try:
         while True:
             sys.stdout.write(f"\r{spinner[idx % len(spinner)]} watching…")
@@ -294,7 +294,7 @@ def main() -> None:
             idx += 1
             time.sleep(0.2)
     except KeyboardInterrupt:
-        print("\nStopping monitor.")
+        logging.info("Stopping monitor.")
         observer.stop()
     observer.join()
 
