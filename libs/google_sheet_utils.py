@@ -131,6 +131,7 @@ class GoogleSheet:
                 return sheet_row
         return None
 
+
     def append_run(self, run_name: str, setup_dt: datetime, end_dt: Optional[datetime] = None) -> None:
         """
         Append a new run to the sheet with the given setup and end times.
@@ -140,11 +141,25 @@ class GoogleSheet:
         setup_dt (datetime): The setup/start time.
         end_dt (Optional[datetime]): The end time, if available.
         """
+        next_id = self._get_next_id()
+        new_row = self._build_new_row(run_name, setup_dt, end_dt, next_id)
+        self._retry_api_call(self.ws.append_row, new_row, value_input_option='RAW')
+        self.data_rows.append(new_row)
+
+    def _get_next_id(self) -> int:
+        """
+        Get the next available integer ID for a new run.
+        """
         existing_ids = [
             int(r[self.COL_ID - 1]) for r in self.data_rows
             if r[self.COL_ID - 1].isdigit()
         ]
-        next_id = max(existing_ids) + 1 if existing_ids else 1
+        return max(existing_ids) + 1 if existing_ids else 1
+
+    def _build_new_row(self, run_name: str, setup_dt: datetime, end_dt: Optional[datetime], next_id: int) -> List[str]:
+        """
+        Build a new row for appending to the sheet.
+        """
         new_row = [''] * len(self.headers)
         new_row[self.COL_ID - 1] = str(next_id)
         new_row[self.COL_RUN_NAME - 1] = run_name
@@ -152,8 +167,7 @@ class GoogleSheet:
             new_row[self.COL_SETUP - 1] = setup_dt.strftime('%Y-%m-%d %H:%M:%S')
         if end_dt:
             new_row[self.COL_END - 1] = end_dt.strftime('%Y-%m-%d %H:%M:%S')
-        self._retry_api_call(self.ws.append_row, new_row, value_input_option='RAW')
-        self.data_rows.append(new_row)
+        return new_row
 
 
     def update_run_row(self, run_name: str, values: Dict[int, Any]) -> None:
@@ -169,6 +183,21 @@ class GoogleSheet:
             return
         mem_idx = row_idx - self.header_row - 1
         row = self.data_rows[mem_idx]
+        updated = self._update_row_in_memory(row, values)
+        if updated:
+            self._push_row_update(row_idx, row)
+
+    def _update_row_in_memory(self, row: List[str], values: Dict[int, Any]) -> bool:
+        """
+        Update the in-memory row with the provided values.
+
+        Parameters:
+        row (List[str]): The row to update.
+        values (Dict[int, Any]): Mapping of column indices to new values.
+
+        Returns:
+        bool: True if any value was updated, False otherwise.
+        """
         updated = False
         for col_idx, value in values.items():
             if value is None:
@@ -180,10 +209,18 @@ class GoogleSheet:
             if not row[col_idx - 1].strip():
                 row[col_idx - 1] = value
                 updated = True
-        if updated:
-            # Update the entire row in the sheet
-            self._retry_api_call(
-                self.ws.update,
-                f"A{row_idx}:{chr(64+len(row))}{row_idx}",
-                [row]
-            )
+        return updated
+
+    def _push_row_update(self, row_idx: int, row: List[str]) -> None:
+        """
+        Push the updated row to the Google Sheet.
+
+        Parameters:
+        row_idx (int): The row index in the sheet.
+        row (List[str]): The updated row data.
+        """
+        self._retry_api_call(
+            self.ws.update,
+            f"A{row_idx}:{chr(64+len(row))}{row_idx}",
+            [row]
+        )

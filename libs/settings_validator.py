@@ -27,38 +27,85 @@ def _extract_sections(xml_path: Path) -> Dict:
     root = tree.getroot()
     out: Dict = {}
 
-    # Board
+    out.update(_extract_board_section(root))
+    out['parameters'] = _extract_parameters_section(root)
+    out['channels'] = _extract_channels_section(root)
+    out.update(_extract_subtrees(root, (
+        'acquisitionMemento', 'timeCorrelationMemento', 'virtualChannelsMemento'
+    )))
+    return out
+
+def _extract_board_section(root: ET.Element) -> Dict[str, str]:
+    """
+    Extract board information from the XML root.
+
+    Parameters:
+    root (ET.Element): The root XML element.
+
+    Returns:
+    Dict[str, str]: Board fields and their values.
+    """
+    out = {}
     board = root.find('board')
     if board is not None:
-        for tag in ('id','modelName','serialNumber','label'):
+        for tag in ('id', 'modelName', 'serialNumber', 'label'):
             el = board.find(tag)
             out[f'board.{tag}'] = (el.text or '').strip()
+    return out
 
-    # Parameters
+def _extract_parameters_section(root: ET.Element) -> Dict[str, str]:
+    """
+    Extract parameters from the XML root.
+
+    Parameters:
+    root (ET.Element): The root XML element.
+
+    Returns:
+    Dict[str, str]: Parameter keys and values.
+    """
     params = {}
-    for entry in root.findall(f'.//{PARAMETERS_TAG}/{ENTRY_TAG}'):
-        key = entry.findtext(KEY_TAG,'').strip()
-        val_el = entry.find(VALUE_TAG)
+    for entry in root.findall('.//parameters/entry'):
+        key = entry.findtext('key', '').strip()
+        val_el = entry.find('value')
         if val_el is not None:
-            nested = val_el.findtext(VALUE_TAG)
+            nested = val_el.findtext('value')
             val = nested if nested is not None else (val_el.text or '')
         else:
             val = ''
         params[key] = val.strip()
-    out['parameters'] = params
+    return params
 
-    # Channels
+def _extract_channels_section(root: ET.Element) -> Dict[str, str]:
+    """
+    Extract channel information from the XML root.
+
+    Parameters:
+    root (ET.Element): The root XML element.
+
+    Returns:
+    Dict[str, str]: Channel IDs and their XML string.
+    """
     chans = {}
     for ch in root.findall('.//virtualChannelsMemento/channel'):
         ch_id = ch.get('id')
         chans[ch_id] = ET.tostring(ch, encoding='unicode')
-    out['channels'] = chans
+    return chans
 
-    # Subtrees raw XML
-    for section in ('acquisitionMemento','timeCorrelationMemento','virtualChannelsMemento'):
+def _extract_subtrees(root: ET.Element, sections: Tuple[str, ...]) -> Dict[str, str]:
+    """
+    Extract raw XML for specified subtrees.
+
+    Parameters:
+    root (ET.Element): The root XML element.
+    sections (Tuple[str, ...]): Section names to extract.
+
+    Returns:
+    Dict[str, str]: Section names and their XML string.
+    """
+    out = {}
+    for section in sections:
         el = root.find(section)
         out[section] = ET.tostring(el, encoding='unicode') if el is not None else ''
-
     return out
 
 

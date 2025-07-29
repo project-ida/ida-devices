@@ -71,8 +71,8 @@ def is_settings_file(path: Path) -> bool:
 
 def is_end_file(path: Path) -> bool:
     """
-    Check if the given path is the expected .txt end file for a run.
-    The .txt file must be named <run_folder>.txt (case-insensitive).
+    Check if the given path is the expected END_FILE_SUFFIX end file for a run.
+    The END_FILE_SUFFIX file must be named <run_folder>.txt (case-insensitive).
 
     Parameters:
     path (Path): The file path to check.
