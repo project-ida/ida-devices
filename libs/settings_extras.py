@@ -22,6 +22,10 @@ def extract_digitizer_info(settings_path: str) -> Optional[str]:
 
     Returns:
     Optional[str]: String in the format "modelName (serialNumber)" or None if extraction fails.
+
+    Exception Handling:
+    - Catches XML parse errors and any unexpected exceptions.
+    - Logs a warning with the exception details for debugging.
     """
     p = Path(settings_path)
     if not p.exists():
@@ -36,6 +40,9 @@ def extract_digitizer_info(settings_path: str) -> Optional[str]:
         tree = ET.parse(str(p))
     except ET.ParseError:
         logging.warning(f"⚠️  Digitizer info: malformed XML: {settings_path}")
+        return None
+    except Exception as e:
+        logging.warning(f"⚠️  Digitizer info: error reading '{settings_path}': {e}")
         return None
 
     root = tree.getroot()
