@@ -8,6 +8,15 @@ import difflib
 
 
 def _extract_sections(xml_path: Path) -> Dict:
+    """
+    Extract relevant sections from an XML file for comparison.
+
+    Parameters:
+    xml_path (Path): Path to the XML file.
+
+    Returns:
+    Dict: Dictionary of extracted sections.
+    """
     tree = ET.parse(xml_path)
     root = tree.getroot()
     out: Dict = {}
@@ -48,6 +57,16 @@ def _extract_sections(xml_path: Path) -> Dict:
 
 
 def _extract_simple_fields_from_subtree(xml_text: str, wanted_fields=('runId',)) -> Dict[str,str]:
+    """
+    Extract simple fields from an XML subtree.
+
+    Parameters:
+    xml_text (str): XML text to parse.
+    wanted_fields (tuple): Fields to extract.
+
+    Returns:
+    Dict[str, str]: Mapping of field names to values.
+    """
     if not xml_text:
         return {}
     try:
@@ -64,7 +83,14 @@ def _extract_simple_fields_from_subtree(xml_text: str, wanted_fields=('runId',))
 def validate_against_references(current_path: str, config_folder: str) -> List[str]:
     """
     Compare current settings.xml to each reference XML in config_folder.
-    Returns only short summary lines for *all* detected differences.
+    Returns only short summary lines for all detected differences.
+
+    Parameters:
+    current_path (str): Path to the current settings.xml.
+    config_folder (str): Path to the folder with reference XMLs.
+
+    Returns:
+    List[str]: List of summary lines for differences.
     """
     curr = Path(current_path)
     refs = list(Path(config_folder).glob('*.xml'))
@@ -123,12 +149,13 @@ def report_reference_comparison(
     max_diffs: int = 10
 ) -> None:
     """
-    Compare settings_path to all XMLs in config_folder. Prints:
-      - Warning if settings_path or config_folder is missing
-      - Warning if no references found
-      - ✅ if any reference matches exactly
-      - Otherwise up to max_diffs unified-diff lines per reference,
-        and a summary if there are more.
+    Compare settings_path to all XMLs in config_folder and print a summary of differences.
+
+    Parameters:
+    settings_path (str): Path to the settings.xml file.
+    config_folder (str): Path to the folder with reference XMLs.
+    ignore_tag (str): XML tag to ignore in comparison.
+    max_diffs (int): Maximum number of diff lines to print per reference.
     """
     settings_file = Path(settings_path)
     config_dir    = Path(config_folder)
@@ -183,9 +210,13 @@ def report_reference_comparison(
 
 def _load_parameter_map(xml_path: Path) -> Tuple[dict, List[str]]:
     """
-    Parses the XML at xml_path and returns:
-      - A dict of {param_key: param_value}
-      - A list of raw file lines for later line-number lookup
+    Parse the XML at xml_path and return a parameter map and raw file lines.
+
+    Parameters:
+    xml_path (Path): Path to the XML file.
+
+    Returns:
+    Tuple[dict, List[str]]: Parameter map and list of file lines.
     """
     text = xml_path.read_text(encoding='utf-8').splitlines()
     tree = ET.fromstring("\n".join(text))
@@ -209,9 +240,12 @@ def report_parameter_diffs(
 ) -> None:
     """
     Compare <parameters> in settings.xml against each .xml in config_folder.
-    - Groups all exact matches into one line.
-    - Groups all differing files and then lists up to max_diffs per file.
-    - Skips missing/empty settings or missing config dir.
+    Print grouped results and up to max_diffs per file.
+
+    Parameters:
+    settings_path (str): Path to the settings.xml file.
+    config_folder (str): Path to the folder with reference XMLs.
+    max_diffs (int): Maximum number of diff lines to print per file.
     """
     sfile = Path(settings_path)
     cdir  = Path(config_folder)

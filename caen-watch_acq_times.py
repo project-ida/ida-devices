@@ -48,14 +48,15 @@ CONFIG_REF_DIR_NAME = 'CONFIG'
 
 def clear_line() -> None:
     """
-    Clears the current terminal line.
+    Clear the current terminal line in the console.
+    Used for updating status output in place.
     """
     sys.stdout.write('\r' + ' ' * 80 + '\r')
     sys.stdout.flush()
 
 def is_settings_file(path: Path) -> bool:
     """
-    Returns True if the given path is a settings.xml file.
+    Check if the given path is a settings.xml file.
 
     Parameters:
     path (Path): The file path to check.
@@ -67,7 +68,7 @@ def is_settings_file(path: Path) -> bool:
 
 def is_end_file(path: Path) -> bool:
     """
-    Returns True if the given path is the expected .txt end file for a run.
+    Check if the given path is the expected .txt end file for a run.
     The .txt file must be named <run_folder>.txt (case-insensitive).
 
     Parameters:
@@ -83,13 +84,13 @@ def is_end_file(path: Path) -> bool:
 
 def estimate_start(path: Path) -> Optional[datetime]:
     """
-    Estimates the start time from the file's modification time.
+    Estimate the start time from the file's modification time.
 
     Parameters:
     path (Path): The file path.
 
     Returns:
-    Optional[datetime]: The modification time as a datetime object, or None.
+    Optional[datetime]: The modification time as a datetime object, or None if unavailable.
     """
     try:
         return datetime.fromtimestamp(path.stat().st_mtime)
@@ -98,13 +99,13 @@ def estimate_start(path: Path) -> Optional[datetime]:
 
 def estimate_end(path: Path) -> Optional[datetime]:
     """
-    Estimates the end time from the file's modification time.
+    Estimate the end time from the file's modification time.
 
     Parameters:
     path (Path): The file path.
 
     Returns:
-    Optional[datetime]: The modification time as a datetime object, or None.
+    Optional[datetime]: The modification time as a datetime object, or None if unavailable.
     """
     try:
         return datetime.fromtimestamp(path.stat().st_mtime)
@@ -113,8 +114,8 @@ def estimate_end(path: Path) -> Optional[datetime]:
 
 def initial_scan(root_folder: Path) -> List[Tuple[datetime, Optional[datetime], str, Path]]:
     """
-    Scans the root_folder for run directories and returns a list of runs.
-    Each run is a tuple: (start_dt, stop_dt, run_name, run_folder)
+    Scan the root_folder for run directories and return a list of runs.
+    Each run is a tuple: (start_dt, stop_dt, run_name, run_folder).
 
     Parameters:
     root_folder (Path): The root directory to scan.
@@ -152,7 +153,8 @@ def initial_scan(root_folder: Path) -> List[Tuple[datetime, Optional[datetime], 
 
 class DAQHandler(FileSystemEventHandler):
     """
-    Handles file system events for the DAQ directory, updating the Google Sheet as needed.
+    File system event handler for the DAQ directory.
+    Updates the Google Sheet when new run start/end events are detected.
     """
     def __init__(self, watch_folder: Path, sheet: GoogleSheet, config_dir: Path):
         """

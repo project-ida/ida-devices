@@ -15,9 +15,13 @@ from libs.settings_validator import _load_parameter_map
 
 def extract_digitizer_info(settings_path: str) -> Optional[str]:
     """
-    Reads <board><modelName> and <board><serialNumber> from the given settings.xml
-    and returns "modelName (serialNumber)", or None if any step fails.
-    Prints a warning to the terminal on failure.
+    Extract digitizer model and serial number from a settings.xml file.
+
+    Parameters:
+    settings_path (str): Path to the settings.xml file.
+
+    Returns:
+    Optional[str]: String in the format "modelName (serialNumber)" or None if extraction fails.
     """
     p = Path(settings_path)
     if not p.exists():
@@ -51,8 +55,14 @@ def extract_digitizer_info(settings_path: str) -> Optional[str]:
 
 def find_matching_config_files(settings_path: str, config_folder: str) -> List[str]:
     """
-    Returns a list of XML filenames in the config_folder whose <parameters>
-    exactly match those in settings_path.
+    Find XML files in config_folder whose <parameters> exactly match those in settings_path.
+
+    Parameters:
+    settings_path (str): Path to the settings.xml file.
+    config_folder (str): Path to the folder containing reference config XMLs.
+
+    Returns:
+    List[str]: List of matching config filenames.
     """
     sfile = Path(settings_path)
     cdir = Path(config_folder)

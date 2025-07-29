@@ -31,6 +31,10 @@ import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 
 class GoogleSheet:
+    """
+    Utility class for interacting with a Google Sheet for DAQ run monitoring.
+    Handles authentication, reading, appending, and updating rows.
+    """
     def __init__(self, config_file: str = None, creds_file: str = None):
         """
         Initialize the GoogleSheet object, loading config and authenticating.
@@ -73,6 +77,10 @@ class GoogleSheet:
         self.data_rows = all_rows[self.header_row:]
 
     def _retry_api_call(self, fn, *args, retries: int = 3, delay: float = 1.0, **kwargs):
+        """
+        Retry a Google Sheets API call up to 'retries' times with a delay.
+        Raises the last exception if all retries fail.
+        """
         last_exc = None
         for _ in range(retries):
             try:
@@ -83,6 +91,15 @@ class GoogleSheet:
         raise last_exc
 
     def find_run_row(self, run_name: str) -> Optional[int]:
+        """
+        Find the row index for a given run name.
+
+        Parameters:
+        run_name (str): The run name to search for.
+
+        Returns:
+        Optional[int]: The row index if found, else None.
+        """
         for sheet_row, row in enumerate(self.data_rows, start=self.header_row + 1):
             if (row[self.COL_RUN_NAME - 1].strip() == run_name
                     and row[self.COL_ID - 1].strip()):
@@ -90,6 +107,14 @@ class GoogleSheet:
         return None
 
     def append_run(self, run_name: str, setup_dt: datetime, end_dt: Optional[datetime] = None) -> None:
+        """
+        Append a new run to the sheet with the given setup and end times.
+
+        Parameters:
+        run_name (str): The run name.
+        setup_dt (datetime): The setup/start time.
+        end_dt (Optional[datetime]): The end time, if available.
+        """
         existing_ids = [
             int(r[self.COL_ID - 1]) for r in self.data_rows
             if r[self.COL_ID - 1].isdigit()
