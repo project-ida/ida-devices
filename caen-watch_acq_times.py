@@ -45,10 +45,6 @@ SETTINGS_FILENAME = 'settings.xml'
 END_FILE_SUFFIX = '.txt'
 CONFIG_REF_DIR_NAME = 'CONFIG'
 
-# -------------------------------------------------------------------
-# Helper functions for scanning and processing run folders
-# -------------------------------------------------------------------
-
 def clear_line() -> None:
     """
     Clear the current terminal line in the console.
@@ -114,6 +110,106 @@ def estimate_end(path: Path) -> Optional[datetime]:
         return datetime.fromtimestamp(path.stat().st_mtime)
     except Exception:
         return None
+
+
+def ensure_run_row_exists(
+    sheet: 'GoogleSheet',
+    run_name: str,
+    start_dt: Optional[datetime],
+    stop_dt: Optional[datetime]
+) -> None:
+    """
+    Ensure a row for the run exists in the sheet, appending if necessary.
+
+    Parameters:
+    sheet (GoogleSheet): The GoogleSheet instance.
+    run_name (str): Name of the run.
+    start_dt (Optional[datetime]): Start time of the run.
+    stop_dt (Optional[datetime]): Stop time of the run.
+    """
+    row = sheet.find_run_row(run_name)
+    if row is None:
+        sheet.append_run(run_name, start_dt, stop_dt)
+
+def format_config_files(matches: List[str]) -> str:
+    """
+    Format the list of matching config files as a comma-separated string.
+
+    Parameters:
+    matches (List[str]): List of matching config filenames.
+
+    Returns:
+    str: Comma-separated config filenames, or empty string if none.
+    """
+    return ','.join(matches) if matches else ''
+
+def prepare_update_values(
+    sheet: 'GoogleSheet',
+    start_dt: Optional[datetime],
+    stop_dt: Optional[datetime],
+    digitizer: Optional[str],
+    config_files: str
+) -> Dict[int, Any]:
+    """
+    Prepare the dictionary of values to update in the sheet.
+
+    Parameters:
+    sheet (GoogleSheet): The GoogleSheet instance.
+    start_dt (Optional[datetime]): Start time of the run.
+    stop_dt (Optional[datetime]): Stop time of the run.
+    digitizer (Optional[str]): Digitizer info string.
+    config_files (str): Comma-separated config filenames.
+
+    Returns:
+    Dict[int, Any]: Mapping of column indices to values.
+    """
+    return {
+        sheet.COL_SETUP: start_dt,
+        sheet.COL_END: stop_dt,
+        sheet.COL_DAQ_PC: COMPUTER_NAME,
+        sheet.COL_DIGITIZER: digitizer,
+        sheet.COL_CONFIG: config_files
+    }
+
+def warn_if_no_config_matches(matches: List[str], run_name: str) -> None:
+    """
+    Log a warning if no matching config files are found.
+
+    Parameters:
+    matches (List[str]): List of matching config filenames.
+    run_name (str): Name of the run.
+    """
+    if not matches:
+        logging.warning(f"⚠️  No matching config files found for {run_name}")
+
+def process_run_folder(
+    run_name: str,
+    run_folder: Path,
+    sheet: 'GoogleSheet',
+    config_dir: Path,
+    start_dt: Optional[datetime] = None,
+    stop_dt: Optional[datetime] = None
+) -> None:
+    """
+    Process a run folder and atomically update the Google Sheet with all run info.
+
+    Parameters:
+    run_name (str): Name of the run.
+    run_folder (Path): Path to the run folder.
+    sheet (GoogleSheet): GoogleSheet instance for updating the sheet.
+    config_dir (Path): Path to the config directory.
+    start_dt (Optional[datetime]): Start time of the run.
+    stop_dt (Optional[datetime]): Stop time of the run.
+    """
+    settings_path = run_folder / SETTINGS_FILENAME
+    ensure_run_row_exists(sheet, run_name, start_dt, stop_dt)
+    digitizer = extract_digitizer_info(str(settings_path))
+    matches = find_matching_config_files(str(settings_path), str(config_dir))
+    config_files = format_config_files(matches)
+    values = prepare_update_values(sheet, start_dt, stop_dt, digitizer, config_files)
+    sheet.update_run_row(run_name, values)
+    report_parameter_diffs(str(settings_path), str(config_dir))
+    warn_if_no_config_matches(matches, run_name)
 
 def initial_scan(root_folder: Path) -> List[Tuple[datetime, Optional[datetime], str, Path]]:
     """
@@ -300,105 +396,6 @@ def main() -> None:
         logging.info("Stopping monitor.")
         observer.stop()
     observer.join()
-
-def process_run_folder(
-    run_name: str,
-    run_folder: Path,
-    sheet: 'GoogleSheet',
-    config_dir: Path,
-    start_dt: Optional[datetime] = None,
-    stop_dt: Optional[datetime] = None
-) -> None:
-    """
-    Process a run folder and atomically update the Google Sheet with all run info.
-
-    Parameters:
-    run_name (str): Name of the run.
-    run_folder (Path): Path to the run folder.
-    sheet (GoogleSheet): GoogleSheet instance for updating the sheet.
-    config_dir (Path): Path to the config directory.
-    start_dt (Optional[datetime]): Start time of the run.
-    stop_dt (Optional[datetime]): Stop time of the run.
-    """
-    settings_path = run_folder / SETTINGS_FILENAME
-    ensure_run_row_exists(sheet, run_name, start_dt, stop_dt)
-    digitizer = extract_digitizer_info(str(settings_path))
-    matches = find_matching_config_files(str(settings_path), str(config_dir))
-    config_files = format_config_files(matches)
-    values = prepare_update_values(sheet, start_dt, stop_dt, digitizer, config_files)
-    sheet.update_run_row(run_name, values)
-    report_parameter_diffs(str(settings_path), str(config_dir))
-    warn_if_no_config_matches(matches, run_name)
-
-def ensure_run_row_exists(
-    sheet: 'GoogleSheet',
-    run_name: str,
-    start_dt: Optional[datetime],
-    stop_dt: Optional[datetime]
-) -> None:
-    """
-    Ensure a row for the run exists in the sheet, appending if necessary.
-
-    Parameters:
-    sheet (GoogleSheet): The GoogleSheet instance.
-    run_name (str): Name of the run.
-    start_dt (Optional[datetime]): Start time of the run.
-    stop_dt (Optional[datetime]): Stop time of the run.
-    """
-    row = sheet.find_run_row(run_name)
-    if row is None:
-        sheet.append_run(run_name, start_dt, stop_dt)
-
-def format_config_files(matches: List[str]) -> str:
-    """
-    Format the list of matching config files as a comma-separated string.
-
-    Parameters:
-    matches (List[str]): List of matching config filenames.
-
-    Returns:
-    str: Comma-separated config filenames, or empty string if none.
-    """
-    return ','.join(matches) if matches else ''
-
-def prepare_update_values(
-    sheet: 'GoogleSheet',
-    start_dt: Optional[datetime],
-    stop_dt: Optional[datetime],
-    digitizer: Optional[str],
-    config_files: str
-) -> Dict[int, Any]:
-    """
-    Prepare the dictionary of values to update in the sheet.
-
-    Parameters:
-    sheet (GoogleSheet): The GoogleSheet instance.
-    start_dt (Optional[datetime]): Start time of the run.
-    stop_dt (Optional[datetime]): Stop time of the run.
-    digitizer (Optional[str]): Digitizer info string.
-    config_files (str): Comma-separated config filenames.
-
-    Returns:
-    Dict[int, Any]: Mapping of column indices to values.
-    """
-    return {
-        sheet.COL_SETUP: start_dt,
-        sheet.COL_END: stop_dt,
-        sheet.COL_DAQ_PC: COMPUTER_NAME,
-        sheet.COL_DIGITIZER: digitizer,
-        sheet.COL_CONFIG: config_files
-    }
-
-def warn_if_no_config_matches(matches: List[str], run_name: str) -> None:
-    """
-    Log a warning if no matching config files are found.
-
-    Parameters:
-    matches (List[str]): List of matching config filenames.
-    run_name (str): Name of the run.
-    """
-    if not matches:
-        logging.warning(f"⚠️  No matching config files found for {run_name}")
 
 if __name__ == '__main__':
     main()
