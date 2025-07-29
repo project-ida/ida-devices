@@ -2,6 +2,7 @@
 
 import xml.etree.ElementTree as ET
 from pathlib import Path
+import logging
 from typing import Dict, List, Tuple
 import difflib
 
@@ -133,22 +134,22 @@ def report_reference_comparison(
     config_dir    = Path(config_folder)
 
     if not settings_file.is_file():
-        print(f"⚠️ Settings compare: '{settings_path}' not found.")
+        logging.warning(f"⚠️ Settings compare: '{settings_path}' not found.")
         return
     if not config_dir.is_dir():
-        print(f"⚠️ Settings compare: config folder '{config_folder}' not found.")
+        logging.warning(f"⚠️ Settings compare: config folder '{config_folder}' not found.")
         return
 
     refs = sorted(config_dir.glob('*.xml'))
     if not refs:
-        print(f"⚠️ Settings compare: no reference XMLs in '{config_folder}'.")
+        logging.warning(f"⚠️ Settings compare: no reference XMLs in '{config_folder}'.")
         return
 
     # read & filter settings
     try:
         lines = settings_file.read_text(encoding='utf-8').splitlines()
     except Exception as e:
-        print(f"⚠️ Settings compare: cannot read '{settings_path}': {e}")
+        logging.warning(f"⚠️ Settings compare: cannot read '{settings_path}': {e}")
         return
     filtered = [ln for ln in lines if ignore_tag not in ln]
 
@@ -158,7 +159,7 @@ def report_reference_comparison(
         try:
             ref_lines = ref.read_text(encoding='utf-8').splitlines()
         except Exception:
-            print(f"⚠️ Settings compare: cannot read '{ref.name}' – skipping.")
+            logging.warning(f"⚠️ Settings compare: cannot read '{ref.name}' – skipping.")
             continue
         ref_filtered = [ln for ln in ref_lines if ignore_tag not in ln]
 
@@ -169,16 +170,16 @@ def report_reference_comparison(
         if not diffs:
             exact.append(ref.name)
         else:
-            print(f"\nDiff vs {ref.name}:")
+            logging.info(f"\nDiff vs {ref.name}:")
             for line in diffs[:max_diffs]:
-                print(line)
+                logging.info(line)
             more = len(diffs) - max_diffs
             if more > 0:
-                print(f"...and {more} more differences...")
+                logging.info(f"...and {more} more differences...")
     if exact:
-        print(f"\n✅ Exact match with: {', '.join(exact)}")
+        logging.info(f"\n✅ Exact match with: {', '.join(exact)}")
     else:
-        print("\n⚠️ No exact matches found.")
+        logging.warning("\n⚠️ No exact matches found.")
 
 def _load_parameter_map(xml_path: Path) -> Tuple[dict, List[str]]:
     """
@@ -217,15 +218,15 @@ def report_parameter_diffs(
 
     # Pre‐checks
     if not sfile.is_file() or sfile.stat().st_size == 0:
-        print(f"⚠️  Skipping diff: '{settings_path}' is missing or empty.")
+        logging.warning(f"⚠️  Skipping diff: '{settings_path}' is missing or empty.")
         return
     if not cdir.is_dir():
-        print(f"⚠️  Config folder not found: {config_folder}")
+        logging.warning(f"⚠️  Config folder not found: {config_folder}")
         return
 
     refs = sorted(cdir.glob('*.xml'))
     if not refs:
-        print(f"⚠️  No reference XMLs in {cdir}")
+        logging.warning(f"⚠️  No reference XMLs in {cdir}")
         return
 
     # Load master parameter map
@@ -259,14 +260,14 @@ def report_parameter_diffs(
 
     # Print grouped results
     if matches:
-        print(f"✅ Exact matches: {', '.join(matches)}")
+        logging.info(f"✅ Exact matches: {', '.join(matches)}")
     if diffs_map:
-        print(f"⚠️  Differences detected in: {', '.join(diffs_map.keys())}")
+        logging.warning(f"⚠️  Differences detected in: {', '.join(diffs_map.keys())}")
         for ref_name, diffs in diffs_map.items():
-            print(f"**{ref_name}**")
+            logging.info(f"**{ref_name}**")
             for lineno, key, old, new in diffs[:max_diffs]:
-                print(f"  L{lineno:<4} {key:<24}: '{old}' → '{new}'")
+                logging.info(f"  L{lineno:<4} {key:<24}: '{old}' → '{new}'")
             more = len(diffs) - max_diffs
             if more > 0:
-                print(f"  ...and {more} more differences...")
+                logging.info(f"  ...and {more} more differences...")
 
