@@ -64,11 +64,11 @@ def _extract_parameters_section(root: ET.Element) -> Dict[str, str]:
     Dict[str, str]: Parameter keys and values.
     """
     params = {}
-    for entry in root.findall('.//parameters/entry'):
-        key = entry.findtext('key', '').strip()
-        val_el = entry.find('value')
+    for entry in root.findall(f'.//{PARAMETERS_TAG}/{ENTRY_TAG}'):
+        key = entry.findtext(KEY_TAG, '').strip()
+        val_el = entry.find(VALUE_TAG)
         if val_el is not None:
-            nested = val_el.findtext('value')
+            nested = val_el.findtext(VALUE_TAG)
             val = nested if nested is not None else (val_el.text or '')
         else:
             val = ''
@@ -274,12 +274,12 @@ def _load_parameter_map(xml_path: Path) -> Tuple[dict, List[str]]:
     text = xml_path.read_text(encoding='utf-8').splitlines()
     tree = ET.fromstring("\n".join(text))
     params = {}
-    for entry in tree.findall('.//parameters/entry'):
-        key = entry.findtext('key','').strip()
+    for entry in tree.findall(f'.//{PARAMETERS_TAG}/{ENTRY_TAG}'):
+        key = entry.findtext(KEY_TAG, '').strip()
         # value might be nested <value><value>…</value></value>
-        val_el = entry.find('value')
+        val_el = entry.find(VALUE_TAG)
         if val_el is not None:
-            nested = val_el.findtext('value')
+            nested = val_el.findtext(VALUE_TAG)
             val = (nested if nested is not None else val_el.text or '').strip()
         else:
             val = ''
