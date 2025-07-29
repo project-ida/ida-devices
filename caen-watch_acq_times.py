@@ -33,11 +33,12 @@ from libs.google_sheet_utils import (
     load_run_names,
     find_run_row,
     append_run,
-    update_setup_time,
-    update_end_time,
-    update_pc_name,
-    update_digitizer,
-    update_config_files,
+    update_field_if_blank,
+    COL_DAQ_PC,
+    COL_DIGITIZER,
+    COL_CONFIG,
+    COL_SETUP,
+    COL_END,
 )
 # Import our settings_extras from libs/
 from libs.settings_extras import extract_digitizer_info, find_matching_config_files
@@ -136,17 +137,17 @@ class DAQHandler(FileSystemEventHandler):
                 if row is None:
                     append_run(run_name, start_dt, None)
                 else:
-                    update_setup_time(run_name, start_dt)
-                update_pc_name(run_name, COMPUTER_NAME)
+                    update_field_if_blank(run_name, start_dt, COL_SETUP)
+                update_field_if_blank(run_name, COMPUTER_NAME, COL_DAQ_PC)
                 digitizer = extract_digitizer_info(path)
                 if digitizer:
-                    update_digitizer(run_name, digitizer)
+                    update_field_if_blank(run_name, digitizer, COL_DIGITIZER)
                 config_dir = Path(self.watch_folder) / CONFIG_REF_DIR_NAME
                 report_parameter_diffs(path, str(config_dir))
                 matches = find_matching_config_files(path, str(config_dir))
                 config_files = ','.join(matches)
                 if matches:
-                    update_config_files(run_name, config_files)
+                    update_field_if_blank(run_name, config_files, COL_CONFIG)
                 else:
                     print(f"⚠️  No matching config files found for {run_name}")
 
@@ -162,11 +163,11 @@ class DAQHandler(FileSystemEventHandler):
                     # In case we missed START
                     append_run(run_name, None, stop_dt)
                 else:
-                    update_end_time(run_name, stop_dt)
-                update_pc_name(run_name, COMPUTER_NAME)
+                    update_field_if_blank(run_name, stop_dt, COL_END)
+                update_field_if_blank(run_name, COMPUTER_NAME, COL_DAQ_PC)
                 digitizer = extract_digitizer_info(path)
                 if digitizer:
-                    update_digitizer(run_name, digitizer)
+                    update_field_if_blank(run_name, digitizer, COL_DIGITIZER)
 
 # -------------------------------------------------------------------
 # Main
@@ -213,24 +214,24 @@ def main():
         if row is None:
             append_run(run_name, start_dt, stop_dt)
         else:
-            update_setup_time(run_name, start_dt)
+            update_field_if_blank(run_name, start_dt, COL_SETUP)
             if stop_dt:
-                update_end_time(run_name, stop_dt)
+                update_field_if_blank(run_name, stop_dt, COL_END)
 
         # populate DAQ_PC column if blank
-        update_pc_name(run_name, COMPUTER_NAME)
+        update_field_if_blank(run_name, COMPUTER_NAME, COL_DAQ_PC)
         settings_path = os.path.join(run_folder, 'settings.xml')
         config_dir    = Path(watch_folder) / CONFIG_REF_DIR_NAME
         report_parameter_diffs(str(settings_path), str(config_dir))
         digitizer = extract_digitizer_info(settings_path)
         if digitizer:
-            update_digitizer(run_name, digitizer)
+            update_field_if_blank(run_name, digitizer, COL_DIGITIZER)
 
         config_dir = Path(watch_folder) / CONFIG_REF_DIR_NAME
         matches = find_matching_config_files(settings_path, str(config_dir))
         config_files = ','.join(matches)
         if matches:
-            update_config_files(run_name, config_files)
+            update_field_if_blank(run_name, config_files, COL_CONFIG)
         else:
             print(f"⚠️  No matching config files found for {run_name}")
 

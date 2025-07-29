@@ -192,113 +192,32 @@ def append_run(run_name: str, setup_dt: datetime, end_dt: Optional[datetime] = N
     _retry_api_call(ws.append_row, new_row, value_input_option='RAW')
     data_rows.append(new_row)
 
-def update_setup_time(run_name: str, setup_dt: datetime) -> None:
+def update_field_if_blank(run_name: str, value, col_idx: int) -> None:
     """
-    Overwrite the 'Setup' cell for the given run, in both sheet and memory,
-    but only if it’s currently blank.
-    """
-    row_idx = find_run_row(run_name)
-    if row_idx is None:
-        raise ValueError(f"Run '{run_name}' not found")
-
-    # DON’T overwrite if already present
-    current = data_rows[row_idx - HEADER_ROW - 1][COL_SETUP - 1].strip()
-    if current:
-        return
-
-    val = setup_dt.strftime('%Y-%m-%d %H:%M:%S')
-    _retry_api_call(ws.update_cell, row_idx, COL_SETUP, val)
-    data_rows[row_idx - HEADER_ROW - 1][COL_SETUP - 1] = val
-
-def update_end_time(run_name: str, end_dt: datetime) -> None:
-    """
-    Write the End timestamp into only the *last* master row matching `run_name`,
-    but only if that cell is currently blank. Uses `find_run_rows()` to locate
-    all master rows, picks the final one, retries transient API errors, and
-    syncs the in-memory cache.
-
-    Args:
-        run_name: the run folder name to match in the sheet.
-        end_dt:   the datetime to write (must be a datetime instance).
-
-    Raises:
-        ValueError: if `run_name` is invalid.
-        TypeError: if `end_dt` is not a datetime.
-    """
-    if not isinstance(end_dt, datetime):
-        raise TypeError("end_dt must be a datetime instance")
-
-    rows = find_run_rows(run_name)
-    if not rows:
-        # no master rows to update
-        return
-
-    # target only the last master row
-    sheet_row = rows[-1]
-    mem_idx   = sheet_row - HEADER_ROW - 1
-    col       = COL_END
-
-    # skip if already populated
-    if data_rows[mem_idx][col - 1].strip():
-        return
-
-    val = end_dt.strftime('%Y-%m-%d %H:%M:%S')
-    # write with retry, then update memory
-    _retry_api_call(ws.update_cell, sheet_row, col, val)
-    data_rows[mem_idx][col - 1] = val
-
-
-def update_pc_name(run_name: str, pc_name: str) -> None:
-    """
-    If the 'DAQ PC' cell is blank, write `pc_name`.
-    Never overwrite an existing value.
+    If the cell in column `col_idx` for `run_name` is blank, write `value`.
+    Handles both str and datetime values. Never overwrites existing values.
     """
     row_idx = find_run_row(run_name)
     if row_idx is None:
         return
+    _write_if_blank(row_idx, col_idx, value)
 
-    current = data_rows[row_idx - HEADER_ROW - 1][COL_DAQ_PC - 1].strip()
-    if current:
-        return
-
-    _retry_api_call(ws.update_cell, row_idx, COL_DAQ_PC, pc_name)
-    data_rows[row_idx - HEADER_ROW - 1][COL_DAQ_PC - 1] = pc_name
-
-def update_digitizer(run_name: str, digitizer: str) -> None:
+def _write_if_blank(row_idx: int, col_idx: int, value) -> None:
     """
-    If the 'Digitizer' cell is blank, write `digitizer`.
-    Never overwrite an existing value.
+    Write `value` to the cell at (row_idx, col_idx) if it is currently blank.
+    Handles both str and datetime values. Also updates the in-memory data_rows cache.
     """
-    if not isinstance(digitizer, str) or not digitizer.strip():
+    if value is None:
+        return
+    if isinstance(value, datetime):
+        value = value.strftime('%Y-%m-%d %H:%M:%S')
+    elif not isinstance(value, str):
+        return
+    elif not value.strip():
         return
 
-    row_idx = find_run_row(run_name)
-    if row_idx is None:
+    mem_idx = row_idx - HEADER_ROW - 1
+    if data_rows[mem_idx][col_idx - 1].strip():
         return
-
-    current = data_rows[row_idx - HEADER_ROW - 1][COL_DIGITIZER - 1].strip()
-    if current:
-        return
-
-    _retry_api_call(ws.update_cell, row_idx, COL_DIGITIZER, digitizer)
-    data_rows[row_idx - HEADER_ROW - 1][COL_DIGITIZER - 1] = digitizer
-
-def update_config_files(run_name: str, config_files: str) -> None:
-    """
-    If the 'Compas configuration file (digitizer settings)' cell is blank,
-    write `config_files` (comma-separated filenames). Never overwrite existing.
-    """
-    if not isinstance(config_files, str) or not config_files.strip():
-        return
-
-    row_idx = find_run_row(run_name)
-    if row_idx is None:
-        return
-
-    # Use the same column as DIGITIZER_HEADER
-    current = data_rows[row_idx - HEADER_ROW - 1][COL_CONFIG - 1].strip()
-    if current:
-        return
-
-    _retry_api_call(ws.update_cell, row_idx, COL_CONFIG, config_files)
-    data_rows[row_idx - HEADER_ROW - 1][COL_CONFIG - 1] = config_files
+    _retry_api_call(ws.update_cell, row_idx, col_idx, value)
+    data_rows[mem_idx][col_idx - 1] = value
