@@ -23,7 +23,7 @@ from watchdog.events import FileSystemEventHandler
 from pathlib import Path
 
 # Determine local host name (or from env var)
-COMPUTER_NAME = socket.gethostname()
+COMPUTER_NAME = os.getenv("COMPUTER_NAME") or socket.gethostname()
 
 # Ensure libs/ is on the path
 PROJECT_ROOT = Path(__file__).resolve().parent
@@ -39,7 +39,9 @@ from libs.settings_extras import extract_digitizer_info, find_matching_config_fi
 # Import our settings_validator from libs/
 from libs.settings_validator import report_parameter_diffs
 
-# Name of the folder (under your watch root) that holds reference XMLs:
+# Magic string constants
+SETTINGS_FILENAME = 'settings.xml'
+END_FILE_SUFFIX = '.txt'
 CONFIG_REF_DIR_NAME = 'CONFIG'
 
 # -------------------------------------------------------------------
@@ -64,7 +66,7 @@ def is_settings_file(path: Path) -> bool:
     Returns:
     bool: True if the file is named 'settings.xml', False otherwise.
     """
-    return path.name.lower() == 'settings.xml'
+    return path.name.lower() == SETTINGS_FILENAME
 
 def is_end_file(path: Path) -> bool:
     """
@@ -78,7 +80,7 @@ def is_end_file(path: Path) -> bool:
     bool: True if the file is the expected end file, False otherwise.
     """
     return (
-        path.suffix.lower() == '.txt'
+        path.suffix.lower() == END_FILE_SUFFIX
         and path.stem.lower() == path.parent.name.lower()
     )
 
@@ -132,12 +134,12 @@ def initial_scan(root_folder: Path) -> List[Tuple[datetime, Optional[datetime], 
         if dirpath.name.startswith('.'):
             continue
 
-        if 'settings.xml' not in filenames:
+        if SETTINGS_FILENAME not in filenames:
             continue
 
         run_name = dirpath.name
-        settings_pth = dirpath / 'settings.xml'
-        txt_pth = dirpath / f'{run_name}.txt'
+        settings_pth = dirpath / SETTINGS_FILENAME
+        txt_pth = dirpath / f'{run_name}{END_FILE_SUFFIX}'
         start_dt = estimate_start(settings_pth)
         stop_dt = estimate_end(txt_pth) if txt_pth.exists() else None
 

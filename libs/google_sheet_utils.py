@@ -26,6 +26,7 @@ import json
 import time
 from typing import List, Optional, Dict, Any
 from datetime import datetime
+import logging
 
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
@@ -84,16 +85,34 @@ class GoogleSheet:
 
     def _retry_api_call(self, fn, *args, retries: int = 3, delay: float = 1.0, **kwargs):
         """
-        Retry a Google Sheets API call up to 'retries' times with a delay.
-        Raises the last exception if all retries fail.
+        Retry a Google Sheets API call up to 'retries' times with exponential backoff.
+        Logs every exception encountered during retries for better debugging.
+
+        Parameters:
+        fn: The function to call.
+        *args: Positional arguments for the function.
+        retries (int): Number of retry attempts.
+        delay (float): Initial delay between retries in seconds.
+        **kwargs: Keyword arguments for the function.
+
+        Returns:
+        The result of the function call if successful.
+
+        Raises:
+        Exception: The last exception encountered if all retries fail.
         """
         last_exc = None
-        for _ in range(retries):
+        for attempt in range(1, retries + 1):
             try:
                 return fn(*args, **kwargs)
             except Exception as e:
+                logging.warning(
+                    f"API call failed on attempt {attempt}/{retries}: {e}"
+                )
                 last_exc = e
                 time.sleep(delay)
+                delay *= 2  # Exponential backoff
+        logging.error(f"API call failed after {retries} attempts.")
         raise last_exc
 
     def find_run_row(self, run_name: str) -> Optional[int]:

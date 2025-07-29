@@ -12,6 +12,10 @@ import logging
 from typing import Optional, List
 from libs.settings_validator import _load_parameter_map
 
+BOARD_TAG = 'board'
+MODEL_NAME_TAG = 'modelName'
+SERIAL_NUMBER_TAG = 'serialNumber'
+
 
 def extract_digitizer_info(settings_path: str) -> Optional[str]:
     """
@@ -22,10 +26,6 @@ def extract_digitizer_info(settings_path: str) -> Optional[str]:
 
     Returns:
     Optional[str]: String in the format "modelName (serialNumber)" or None if extraction fails.
-
-    Exception Handling:
-    - Catches XML parse errors and any unexpected exceptions.
-    - Logs a warning with the exception details for debugging.
     """
     p = Path(settings_path)
     if not p.exists():
@@ -46,15 +46,15 @@ def extract_digitizer_info(settings_path: str) -> Optional[str]:
         return None
 
     root = tree.getroot()
-    board = root.find('board')
+    board = root.find(BOARD_TAG)
     if board is None:
-        logging.warning(f"⚠️  Digitizer info: missing <board> element in {settings_path}")
+        logging.warning(f"⚠️  Digitizer info: missing <{BOARD_TAG}> element in {settings_path}")
         return None
 
-    model  = (board.findtext('modelName')    or '').strip()
-    serial = (board.findtext('serialNumber') or '').strip()
+    model  = (board.findtext(MODEL_NAME_TAG)    or '').strip()
+    serial = (board.findtext(SERIAL_NUMBER_TAG) or '').strip()
     if not model or not serial:
-        logging.warning(f"⚠️  Digitizer info: missing modelName or serialNumber in {settings_path}")
+        logging.warning(f"⚠️  Digitizer info: missing {MODEL_NAME_TAG} or {SERIAL_NUMBER_TAG} in {settings_path}")
         return None
 
     return f"{model} ({serial})"

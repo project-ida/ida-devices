@@ -7,6 +7,12 @@ from typing import Dict, List, Tuple
 import difflib
 
 
+IGNORE_TAG_RUN_ID = 'runId'
+PARAMETERS_TAG = 'parameters'
+ENTRY_TAG = 'entry'
+KEY_TAG = 'key'
+VALUE_TAG = 'value'
+
 def _extract_sections(xml_path: Path) -> Dict:
     """
     Extract relevant sections from an XML file for comparison.
@@ -30,11 +36,11 @@ def _extract_sections(xml_path: Path) -> Dict:
 
     # Parameters
     params = {}
-    for entry in root.findall('.//parameters/entry'):
-        key = entry.findtext('key','').strip()
-        val_el = entry.find('value')
+    for entry in root.findall(f'.//{PARAMETERS_TAG}/{ENTRY_TAG}'):
+        key = entry.findtext(KEY_TAG,'').strip()
+        val_el = entry.find(VALUE_TAG)
         if val_el is not None:
-            nested = val_el.findtext('value')
+            nested = val_el.findtext(VALUE_TAG)
             val = nested if nested is not None else (val_el.text or '')
         else:
             val = ''
