@@ -73,14 +73,15 @@ class GoogleSheet:
 
         # Build header map and in-memory rows
         self.headers = all_rows[self.header_row - 1]
+        # Google Sheets columns are 1-based (A=1, B=2, ...)
         self.header_to_col = {name: idx + 1 for idx, name in enumerate(self.headers)}
-        self.COL_ID = self.header_to_col[self.id_header]
-        self.COL_RUN_NAME = self.header_to_col[self.run_header]
-        self.COL_SETUP = self.header_to_col[self.setup_header]
-        self.COL_END = self.header_to_col[self.end_header]
-        self.COL_DAQ_PC = self.header_to_col[self.daq_pc_header]
-        self.COL_DIGITIZER = self.header_to_col[self.digitizer_header]
-        self.COL_CONFIG = self.header_to_col[self.config_header]
+        self.COL_ID = self.header_to_col[self.id_header]  # 1-based index
+        self.COL_RUN_NAME = self.header_to_col[self.run_header]  # 1-based index
+        self.COL_SETUP = self.header_to_col[self.setup_header]  # 1-based index
+        self.COL_END = self.header_to_col[self.end_header]  # 1-based index
+        self.COL_DAQ_PC = self.header_to_col[self.daq_pc_header]  # 1-based index
+        self.COL_DIGITIZER = self.header_to_col[self.digitizer_header]  # 1-based index
+        self.COL_CONFIG = self.header_to_col[self.config_header]  # 1-based index
         self.data_rows = all_rows[self.header_row:]
 
     def _retry_api_call(self, fn, *args, retries: int = 3, delay: float = 1.0, **kwargs):
@@ -125,7 +126,9 @@ class GoogleSheet:
         Returns:
         Optional[int]: The row index if found, else None.
         """
+        # Note: sheet_row is 1-based (Google Sheets row number)
         for sheet_row, row in enumerate(self.data_rows, start=self.header_row + 1):
+            # Use 0-based Python list index for row, 1-based for column
             if (row[self.COL_RUN_NAME - 1].strip() == run_name
                     and row[self.COL_ID - 1].strip()):
                 return sheet_row
