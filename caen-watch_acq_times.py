@@ -15,8 +15,9 @@ import time
 import logging
 import argparse
 import socket
+import subprocess
 from datetime import datetime
-from typing import Optional, List, Tuple
+from typing import Optional, List, Tuple, Dict, Any
 
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
@@ -158,7 +159,7 @@ class DAQHandler(FileSystemEventHandler):
     File system event handler for the DAQ directory.
     Updates the Google Sheet when new run start/end events are detected.
     """
-    def __init__(self, watch_folder: Path, sheet: GoogleSheet, config_dir: Path):
+    def __init__(self, watch_folder: Path, sheet: 'GoogleSheet', config_dir: Path) -> None:
         """
         Initialize the DAQHandler.
 
@@ -172,7 +173,7 @@ class DAQHandler(FileSystemEventHandler):
         self.sheet = sheet
         self.config_dir = config_dir
 
-    def on_created(self, event):
+    def on_created(self, event: Any) -> None:
         """
         Handles the creation of new files in the watched directory.
         Updates the Google Sheet for new run start/end events.
@@ -303,7 +304,7 @@ def main() -> None:
 def process_run_folder(
     run_name: str,
     run_folder: Path,
-    sheet: GoogleSheet,
+    sheet: 'GoogleSheet',
     config_dir: Path,
     start_dt: Optional[datetime] = None,
     stop_dt: Optional[datetime] = None
