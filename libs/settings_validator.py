@@ -78,7 +78,7 @@ def validate_against_references(current_path: str, config_folder: str) -> List[s
 def report_reference_comparison(
     settings_path: str,
     config_folder: str,
-    ignore_tag: str = 'runId',
+    ignore_tags: Tuple[str, ...] = ('runId',),
     max_diffs: int = 10
 ) -> None:
     """
@@ -87,11 +87,11 @@ def report_reference_comparison(
     Parameters:
     settings_path (str): Path to the settings.xml file.
     config_folder (str): Path to the folder with reference XMLs.
-    ignore_tag (str): XML tag to ignore in comparison.
+    ignore_tags (Tuple[str, ...]): XML tags to ignore in comparison.
     max_diffs (int): Maximum number of diff lines to print per reference.
     """
     settings_file = Path(settings_path)
-    config_dir    = Path(config_folder)
+    config_dir = Path(config_folder)
 
     if not settings_file.is_file():
         logging.warning(f"⚠️ Settings compare: '{settings_path}' not found.")
@@ -105,13 +105,16 @@ def report_reference_comparison(
         logging.warning(f"⚠️ Settings compare: no reference XMLs in '{config_folder}'.")
         return
 
-    # read & filter settings
+    # Read & filter settings, ignoring lines containing any ignore tag
     try:
         lines = settings_file.read_text(encoding='utf-8').splitlines()
     except Exception as e:
         logging.warning(f"⚠️ Settings compare: cannot read '{settings_path}': {e}")
         return
-    filtered = [ln for ln in lines if ignore_tag not in ln]
+    filtered = [
+        ln for ln in lines
+        if not any(tag in ln for tag in ignore_tags)
+    ]
 
     exact = []
     for ref in refs:
@@ -121,7 +124,10 @@ def report_reference_comparison(
         except Exception:
             logging.warning(f"⚠️ Settings compare: cannot read '{ref.name}' – skipping.")
             continue
-        ref_filtered = [ln for ln in ref_lines if ignore_tag not in ln]
+        ref_filtered = [
+            ln for ln in ref_lines
+            if not any(tag in ln for tag in ignore_tags)
+        ]
 
         diffs = list(difflib.unified_diff(
             ref_filtered, filtered,
@@ -336,13 +342,16 @@ def _extract_subtrees(root: ET.Element, sections: Tuple[str, ...]) -> Dict[str, 
     return out
 
 
-def _extract_simple_fields_from_subtree(xml_text: str, wanted_fields=('runId',)) -> Dict[str,str]:
+def _extract_simple_fields_from_subtree(
+    xml_text: str,
+    wanted_fields: Tuple[str, ...] = ('runId',)
+) -> Dict[str, str]:
     """
     Extract simple fields from an XML subtree.
 
     Parameters:
     xml_text (str): XML text to parse.
-    wanted_fields (tuple): Fields to extract.
+    wanted_fields (Tuple[str, ...]): Fields to extract.
 
     Returns:
     Dict[str, str]: Mapping of field names to values.
