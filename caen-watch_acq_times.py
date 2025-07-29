@@ -16,6 +16,7 @@ import logging
 import argparse
 import socket
 from datetime import datetime
+from typing import Optional
 
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
@@ -138,23 +139,14 @@ class DAQHandler(FileSystemEventHandler):
             if start_dt:
                 clear_line()
                 logging.info(f"START {run_name}: {start_dt:%Y-%m-%d %H:%M:%S}")
-                row = self.sheet.find_run_row(run_name)
-                if row is None:
-                    self.sheet.append_run(run_name, start_dt, None)
-                else:
-                    self.sheet.update_field_if_blank(run_name, start_dt, self.sheet.COL_SETUP)
-                self.sheet.update_field_if_blank(run_name, COMPUTER_NAME, self.sheet.COL_DAQ_PC)
-                digitizer = extract_digitizer_info(path)
-                if digitizer:
-                    self.sheet.update_field_if_blank(run_name, digitizer, self.sheet.COL_DIGITIZER)
                 config_dir = Path(self.watch_folder) / CONFIG_REF_DIR_NAME
-                report_parameter_diffs(path, str(config_dir))
-                matches = find_matching_config_files(path, str(config_dir))
-                config_files = ','.join(matches)
-                if matches:
-                    self.sheet.update_field_if_blank(run_name, config_files, self.sheet.COL_CONFIG)
-                else:
-                    logging.warning(f"⚠️  No matching config files found for {run_name}")
+                process_run_folder(
+                    run_name=run_name,
+                    run_folder=run_folder,
+                    sheet=self.sheet,
+                    config_dir=config_dir,
+                    start_dt=start_dt
+                )
 
         elif is_end_file(path):
             stop_dt = estimate_end(path)
@@ -215,30 +207,19 @@ def main():
 
     # Sync initial scan into the sheet
     logging.info("=== Initial Scan & Sheet Sync ===")
+    config_dir = Path(watch_folder) / CONFIG_REF_DIR_NAME
     for start_dt, stop_dt, run_name, run_folder in runs:
-        logging.info(f"SYNC  {run_name}: START={start_dt:%Y-%m-%d %H:%M:%S}  STOP={stop_dt or '(none)'}")
-        row = sheet.find_run_row(run_name)
-        if row is None:
-            sheet.append_run(run_name, start_dt, stop_dt)
-        else:
-            sheet.update_field_if_blank(run_name, start_dt, sheet.COL_SETUP)
-            if stop_dt:
-                sheet.update_field_if_blank(run_name, stop_dt, sheet.COL_END)
-        # populate DAQ_PC column if blank
-        sheet.update_field_if_blank(run_name, COMPUTER_NAME, sheet.COL_DAQ_PC)
-        settings_path = os.path.join(run_folder, 'settings.xml')
-        config_dir    = Path(watch_folder) / CONFIG_REF_DIR_NAME
-        report_parameter_diffs(str(settings_path), str(config_dir))
-        digitizer = extract_digitizer_info(settings_path)
-        if digitizer:
-            sheet.update_field_if_blank(run_name, digitizer, sheet.COL_DIGITIZER)
-        config_dir = Path(watch_folder) / CONFIG_REF_DIR_NAME
-        matches = find_matching_config_files(settings_path, str(config_dir))
-        config_files = ','.join(matches)
-        if matches:
-            sheet.update_field_if_blank(run_name, config_files, sheet.COL_CONFIG)
-        else:
-            logging.warning(f"⚠️  No matching config files found for {run_name}")
+        logging.info(
+            f"SYNC  {run_name}: START={start_dt:%Y-%m-%d %H:%M:%S}  STOP={stop_dt or '(none)'}"
+        )
+        process_run_folder(
+            run_name=run_name,
+            run_folder=run_folder,
+            sheet=sheet,
+            config_dir=config_dir,
+            start_dt=start_dt,
+            stop_dt=stop_dt
+        )
 
     # Start live monitoring
     handler  = DAQHandler(watch_folder, sheet)
@@ -260,6 +241,47 @@ def main():
         print("\nStopping monitor.")
         observer.stop()
     observer.join()
+
+def process_run_folder(
+    run_name: str,
+    run_folder: str,
+    sheet: GoogleSheet,
+    config_dir: Path,
+    start_dt: Optional[datetime] = None,
+    stop_dt: Optional[datetime] = None
+) -> None:
+    """
+    Process a run folder: update the Google Sheet with run info, digitizer info,
+    config matches, and parameter diffs.
+
+    Parameters:
+    run_name (str): Name of the run.
+    run_folder (str): Path to the run folder.
+    sheet (GoogleSheet): GoogleSheet instance for updating the sheet.
+    config_dir (Path): Path to the config directory.
+    start_dt (Optional[datetime]): Start time of the run.
+    stop_dt (Optional[datetime]): Stop time of the run.
+    """
+    settings_path = os.path.join(run_folder, 'settings.xml')
+    row = sheet.find_run_row(run_name)
+    if row is None:
+        sheet.append_run(run_name, start_dt, stop_dt)
+    else:
+        if start_dt:
+            sheet.update_field_if_blank(run_name, start_dt, sheet.COL_SETUP)
+        if stop_dt:
+            sheet.update_field_if_blank(run_name, stop_dt, sheet.COL_END)
+    sheet.update_field_if_blank(run_name, COMPUTER_NAME, sheet.COL_DAQ_PC)
+    digitizer = extract_digitizer_info(settings_path)
+    if digitizer:
+        sheet.update_field_if_blank(run_name, digitizer, sheet.COL_DIGITIZER)
+    report_parameter_diffs(settings_path, str(config_dir))
+    matches = find_matching_config_files(settings_path, str(config_dir))
+    config_files = ','.join(matches)
+    if matches:
+        sheet.update_field_if_blank(run_name, config_files, sheet.COL_CONFIG)
+    else:
+        logging.warning(f"⚠️  No matching config files found for {run_name}")
 
 if __name__ == '__main__':
     main()
