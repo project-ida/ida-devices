@@ -116,6 +116,18 @@ class GoogleSheet:
         logging.error(f"API call failed after {retries} attempts.")
         raise last_exc
 
+    def refresh(self) -> None:
+        """
+        Refresh the in-memory cache of sheet rows from the Google Sheet.
+
+        This method should be called to ensure the cache reflects the latest
+        state of the sheet, especially if external edits may have occurred.
+        """
+        all_rows = self.ws.get_all_values()
+        self.headers = all_rows[self.header_row - 1]
+        self.header_to_col = {name: idx + 1 for idx, name in enumerate(self.headers)}
+        self.data_rows = all_rows[self.header_row:]
+
     def find_run_row(self, run_name: str) -> Optional[int]:
         """
         Find the row index for a given run name.
@@ -126,6 +138,7 @@ class GoogleSheet:
         Returns:
         Optional[int]: The row index if found, else None.
         """
+        self.refresh()  # Always fetch the latest data before searching
         # Note: sheet_row is 1-based (Google Sheets row number)
         for sheet_row, row in enumerate(self.data_rows, start=self.header_row + 1):
             # Use 0-based Python list index for row, 1-based for column
@@ -144,10 +157,11 @@ class GoogleSheet:
         setup_dt (datetime): The setup/start time.
         end_dt (Optional[datetime]): The end time, if available.
         """
+        self.refresh()  # Ensure we have the latest before appending
         next_id = self._get_next_id()
         new_row = self._build_new_row(run_name, setup_dt, end_dt, next_id)
         self._retry_api_call(self.ws.append_row, new_row, value_input_option='RAW')
-        self.data_rows.append(new_row)
+        self.data_rows.append(new_row)  # Keep cache in sync with our own change
 
     def _get_next_id(self) -> int:
         """
@@ -181,6 +195,7 @@ class GoogleSheet:
         run_name (str): The run name to update.
         values (Dict[int, Any]): Mapping of column indices to new values.
         """
+        self.refresh()  # Ensure we have the latest before updating
         row_idx = self.find_run_row(run_name)
         if row_idx is None:
             return
