@@ -4,7 +4,6 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 import logging
 from typing import Dict, List, Tuple
-import difflib
 
 
 IGNORE_TAG_RUN_ID = 'runId'
@@ -49,6 +48,15 @@ def report_parameter_diffs(
         logging.warning(f"⚠️  Skipping diff: '{settings_path}' could not be parsed or has no parameters.")
         return
 
+    # Build a reverse lookup: value -> line number(s)
+    value_to_lineno = {}
+    for i, ln in enumerate(s_lines):
+        # Try to extract value from line
+        if '</value>' in ln:
+            val = ln.split('>')[-2].split('<')[0].strip()
+            if val:
+                value_to_lineno.setdefault(val, []).append(i + 1)
+
     matches: List[str] = []
     diffs_map: Dict[str, List[Tuple[int, str, str, str]]] = {}
 
@@ -61,19 +69,11 @@ def report_parameter_diffs(
             old_val = r_map.get(key)
             if old_val is None:
                 # Parameter missing in reference
-                lineno = next(
-                    (i+1 for i, ln in enumerate(s_lines)
-                     if f">{new_val}</value>" in ln),
-                    None
-                )
+                lineno = value_to_lineno.get(new_val, [None])[0]
                 if lineno:
                     diffs.append((lineno, key, "(missing in reference)", new_val))
             elif old_val != new_val:
-                lineno = next(
-                    (i+1 for i, ln in enumerate(s_lines)
-                     if f">{new_val}</value>" in ln),
-                    None
-                )
+                lineno = value_to_lineno.get(new_val, [None])[0]
                 if lineno:
                     diffs.append((lineno, key, old_val, new_val))
 
@@ -87,7 +87,6 @@ def report_parameter_diffs(
             matches.append(ref.name)
         else:
             diffs_map[ref.name] = diffs
-
     # Print grouped results
     if matches:
         logging.info(f"✅ Exact matches: {', '.join(matches)}")
