@@ -8,7 +8,7 @@ then services all read operations locally. Only append/update calls
 hit the API thereafter.
 
 Requirements:
-  - A service‐account JSON key at GOOGLE_CREDS (default "credentials.json")
+  - A service-account JSON key at GOOGLE_CREDS (default "credentials.json")
   - A config file at SHEET_CONFIG_PATH (default "config/google_sheet_config.json")
     defining:
       * spreadsheet_id

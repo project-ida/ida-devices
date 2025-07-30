@@ -30,7 +30,7 @@ def report_parameter_diffs(
     sfile = Path(settings_path)
     cdir  = Path(config_folder)
 
-    # Pre‐checks
+    # Pre-checks
     if not sfile.is_file() or sfile.stat().st_size == 0:
         logging.warning(f"⚠️  Skipping diff: '{settings_path}' is missing or empty.")
         return
