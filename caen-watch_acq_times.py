@@ -355,7 +355,7 @@ class DAQHandler(FileSystemEventHandler):
 # -------------------------------------------------------------------
 
 def main() -> None:
-        """
+    """
     Main entry point for the DAQ directory watcher and Google Sheets synchronization tool.
 
     This function performs the following steps:
