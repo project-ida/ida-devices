@@ -50,11 +50,11 @@ def report_parameter_diffs(
         return
 
     matches: List[str] = []
-    diffs_map: dict[str, List[tuple[int, str, str, str]]] = {}
+    diffs_map: Dict[str, List[Tuple[int, str, str, str]]] = {}
 
     for ref in refs:
         r_map, _ = _load_parameter_map(ref)
-        diffs: List[tuple[int, str, str, str]] = []
+        diffs: List[Tuple[int, str, str, str]] = []
 
         # Report parameters present in current but different or missing in reference
         for key, new_val in s_map.items():

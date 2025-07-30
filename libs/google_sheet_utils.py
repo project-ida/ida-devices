@@ -128,27 +128,26 @@ class GoogleSheet:
         self.header_to_col = {name: idx + 1 for idx, name in enumerate(self.headers)}
         self.data_rows = all_rows[self.header_row:]
 
-    def find_run_row(self, run_name: str) -> Optional[int]:
+    def find_run_row(self, run_name: str, refresh: bool = True) -> Optional[int]:
         """
         Find the row index for a given run name.
 
         Parameters:
         run_name (str): The run name to search for.
+        refresh (bool): Whether to refresh the cache before searching.
 
         Returns:
         Optional[int]: The row index if found, else None.
         """
-        self.refresh()  # Always fetch the latest data before searching
-        # Note: sheet_row is 1-based (Google Sheets row number)
+        if refresh:
+            self.refresh()
         for sheet_row, row in enumerate(self.data_rows, start=self.header_row + 1):
-            # Use 0-based Python list index for row, 1-based for column
             if (row[self.COL_RUN_NAME - 1].strip() == run_name
                     and row[self.COL_ID - 1].strip()):
                 return sheet_row
         return None
 
-
-    def append_run(self, run_name: str, setup_dt: datetime, end_dt: Optional[datetime] = None) -> None:
+    def append_run(self, run_name: str, setup_dt: datetime, end_dt: Optional[datetime] = None, refresh: bool = True) -> None:
         """
         Append a new run to the sheet with the given setup and end times.
 
@@ -156,12 +155,14 @@ class GoogleSheet:
         run_name (str): The run name.
         setup_dt (datetime): The setup/start time.
         end_dt (Optional[datetime]): The end time, if available.
+        refresh (bool): Whether to refresh the cache before appending.
         """
-        self.refresh()  # Ensure we have the latest before appending
+        if refresh:
+            self.refresh()
         next_id = self._get_next_id()
         new_row = self._build_new_row(run_name, setup_dt, end_dt, next_id)
         self._retry_api_call(self.ws.append_row, new_row, value_input_option='RAW')
-        self.data_rows.append(new_row)  # Keep cache in sync with our own change
+        self.data_rows.append(new_row)
 
     def _get_next_id(self) -> int:
         """
@@ -187,16 +188,18 @@ class GoogleSheet:
         return new_row
 
 
-    def update_run_row(self, run_name: str, values: Dict[int, Any]) -> None:
+    def update_run_row(self, run_name: str, values: Dict[int, Any], refresh: bool = True) -> None:
         """
         Atomically update multiple fields for a run in the sheet.
 
         Parameters:
         run_name (str): The run name to update.
         values (Dict[int, Any]): Mapping of column indices to new values.
+        refresh (bool): Whether to refresh the cache before updating.
         """
-        self.refresh()  # Ensure we have the latest before updating
-        row_idx = self.find_run_row(run_name)
+        if refresh:
+            self.refresh()
+        row_idx = self.find_run_row(run_name, refresh=False)
         if row_idx is None:
             return
         mem_idx = row_idx - self.header_row - 1

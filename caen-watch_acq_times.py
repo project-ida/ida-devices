@@ -101,7 +101,8 @@ def ensure_run_row_exists(
     sheet: 'GoogleSheet',
     run_name: str,
     start_dt: Optional[datetime],
-    stop_dt: Optional[datetime]
+    stop_dt: Optional[datetime],
+    refresh: bool = True
 ) -> None:
     """
     Ensure a row for the run exists in the sheet, appending if necessary.
@@ -111,10 +112,11 @@ def ensure_run_row_exists(
     run_name (str): Name of the run.
     start_dt (Optional[datetime]): Start time of the run.
     stop_dt (Optional[datetime]): Stop time of the run.
+    refresh (bool): Whether to refresh the cache before checking/appending.
     """
-    row = sheet.find_run_row(run_name)
+    row = sheet.find_run_row(run_name, refresh=refresh)
     if row is None:
-        sheet.append_run(run_name, start_dt, stop_dt)
+        sheet.append_run(run_name, start_dt, stop_dt, refresh=refresh)
 
 def format_config_files(matches: List[str]) -> str:
     """
@@ -173,7 +175,8 @@ def process_run_folder(
     sheet: 'GoogleSheet',
     config_dir: Path,
     start_dt: Optional[datetime] = None,
-    stop_dt: Optional[datetime] = None
+    stop_dt: Optional[datetime] = None,
+    refresh: bool = True
 ) -> None:
     """
     Process a run folder and atomically update the Google Sheet with all run info.
@@ -185,14 +188,15 @@ def process_run_folder(
     config_dir (Path): Path to the config directory.
     start_dt (Optional[datetime]): Start time of the run.
     stop_dt (Optional[datetime]): Stop time of the run.
+    refresh (bool): Whether to refresh the cache before updating.
     """
     settings_path = run_folder / SETTINGS_FILENAME
-    ensure_run_row_exists(sheet, run_name, start_dt, stop_dt)
+    ensure_run_row_exists(sheet, run_name, start_dt, stop_dt, refresh=refresh)
     digitizer = extract_digitizer_info(str(settings_path))
     matches = find_matching_config_files(str(settings_path), str(config_dir))
     config_files = format_config_files(matches)
     values = prepare_update_values(sheet, start_dt, stop_dt, digitizer, config_files)
-    sheet.update_run_row(run_name, values)
+    sheet.update_run_row(run_name, values, refresh=refresh)
     report_parameter_diffs(str(settings_path), str(config_dir))
     warn_if_no_config_matches(matches, run_name)
 
@@ -417,7 +421,8 @@ def main() -> None:
             sheet=sheet,
             config_dir=config_dir,
             start_dt=start_dt,
-            stop_dt=stop_dt
+            stop_dt=stop_dt,
+            refresh=False  # <--- Only refresh once at the start
         )
 
     # Start live monitoring
