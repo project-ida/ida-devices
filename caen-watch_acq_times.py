@@ -340,10 +340,11 @@ class DAQHandler(FileSystemEventHandler):
             return
         clear_line()
         logging.info(f"STOP  {run_name}: {stop_dt:%Y-%m-%d %H:%M:%S}")
-        row = self.sheet.find_run_row(run_name)
+        self.sheet.refresh()
+        row = self.sheet.find_run_row(run_name, refresh=False)
         if row is None:
             # In case we missed START
-            self.sheet.append_run(run_name, None, stop_dt)
+            self.sheet.append_run(run_name, None, stop_dt, refresh=False)
         else:
             settings_path = run_folder / SETTINGS_FILENAME
             digitizer = extract_digitizer_info(str(settings_path))
@@ -352,7 +353,7 @@ class DAQHandler(FileSystemEventHandler):
                 self.sheet.COL_DAQ_PC: COMPUTER_NAME,
                 self.sheet.COL_DIGITIZER: digitizer
             }
-            self.sheet.update_run_row(run_name, values)
+            self.sheet.update_run_row(run_name, values, refresh=False)
 
 # -------------------------------------------------------------------
 # Main
