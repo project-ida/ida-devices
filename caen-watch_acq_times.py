@@ -241,8 +241,17 @@ def initial_scan(root_folder: Path) -> List[Tuple[datetime, Optional[datetime], 
 
 class DAQHandler(FileSystemEventHandler):
     """
-    Handles file creation and modification events in the DAQ directory
-    and updates the Google Sheet accordingly.
+    Handles file creation events in the DAQ directory and updates the Google Sheet accordingly.
+
+    Specifically, this handler listens for:
+      - Creation of 'settings.xml' files in any run subfolder, which signals the START of a run.
+      - Creation of '<run_name>.txt' files (where the filename matches the parent folder name), which signals the STOP of a run.
+
+    The expected file naming conventions are:
+      - Run start: Each run folder contains a 'settings.xml' file (case-insensitive).
+      - Run stop: Each run folder receives a '<run_name>.txt' file (case-insensitive), where <run_name> matches the folder name.
+
+    Only file creation events (not modifications) are processed to trigger updates in the Google Sheet.
     """
 
     def __init__(self, watch_folder: Path, sheet: 'GoogleSheet', config_dir: Path) -> None:
@@ -269,15 +278,8 @@ class DAQHandler(FileSystemEventHandler):
         """
         self._handle_event(event)
 
-    # def on_modified(self, event: Any) -> None:
-    #     """
-    #     Handles the modification of files in the watched directory.
-    #     Delegates to the shared event handler.
-
-    #     Parameters:
-    #     event (Any): The file system event.
-    #     """
-    #     self._handle_event(event)
+    # If handling file modifications is needed in the future, 
+    # consider implementing an on_modified method similar to on_created.
 
     def _handle_event(self, event: Any) -> None:
         """

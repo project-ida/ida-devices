@@ -29,7 +29,7 @@ from datetime import datetime
 import logging
 
 import gspread
-from google.oauth2.service_account import Credentials  # Modern, secure alternative
+from google.oauth2.service_account import Credentials  # Replaces deprecated oauth2client for authentication
 
 class GoogleSheet:
     """
@@ -56,11 +56,33 @@ class GoogleSheet:
         creds_file = creds_file or os.getenv('GOOGLE_CREDS', 'credentials.json')
 
         # Load config with explicit UTF-8 encoding for cross-platform consistency
-        with open(config_file, 'r', encoding='utf-8') as cf:
-            cfg = json.load(cf)
-            self.spreadsheet_id = cfg['spreadsheet_id']
-            self.sheet_name = cfg['sheet_name']
-            self.header_row = cfg.get('header_row', 1)
+        try:
+            with open(config_file, 'r', encoding='utf-8') as cf:
+                cfg = json.load(cf)
+        except FileNotFoundError:
+            raise FileNotFoundError(
+                f"Config file '{config_file}' not found. Please ensure the path is correct."
+            )
+        except json.JSONDecodeError as e:
+            raise ValueError(
+                f"Config file '{config_file}' is not valid JSON: {e}"
+            )
+        except Exception as e:
+            raise RuntimeError(
+                f"An unexpected error occurred while reading config file '{config_file}': {e}"
+            )
+        # Authenticate and fetch sheet using google-auth
+        scopes = ['https://www.googleapis.com/auth/spreadsheets']
+        try:
+            creds = Credentials.from_service_account_file(creds_file, scopes=scopes)
+        except FileNotFoundError:
+            raise FileNotFoundError(f"Google credentials file not found: {creds_file}")
+        except Exception as e:
+            raise RuntimeError(f"Failed to load Google credentials from '{creds_file}': {e}")
+        gc = gspread.authorize(creds)
+
+        # Parse config columns and headers
+        try:
             cols = cfg['columns']
             self.id_header = cols['id_header']
             self.run_header = cols['google_drive_data_folders_header']
@@ -69,11 +91,19 @@ class GoogleSheet:
             self.daq_pc_header = cols['daq_laptop_name_header']
             self.digitizer_header = cols['digitizer_header']
             self.config_header = cols['compas_config_file_header']
+            self.spreadsheet_id = cfg['spreadsheet_id']
+            self.sheet_name = cfg['sheet_name']
+            self.header_row = cfg['header_row']
+        except KeyError as e:
+            raise KeyError(
+                f"Missing required key in config file '{config_file}': {e}"
+            )
+        except Exception as e:
+            raise RuntimeError(
+                f"An error occurred while parsing config file '{config_file}': {e}"
+            )
 
-        # Authenticate and fetch sheet using google-auth
-        scopes = ['https://www.googleapis.com/auth/spreadsheets']
-        creds = Credentials.from_service_account_file(creds_file, scopes=scopes)
-        gc = gspread.authorize(creds)
+        # Fetch worksheet and all rows
         self.ws = gc.open_by_key(self.spreadsheet_id).worksheet(self.sheet_name)
         all_rows = self.ws.get_all_values()
 
