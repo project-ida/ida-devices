@@ -29,7 +29,7 @@ from datetime import datetime
 import logging
 
 import gspread
-from google.oauth2.service_account import Credentials  # Replaces deprecated oauth2client for authentication
+from google.oauth2.service_account import Credentials
 
 class GoogleSheet:
     """
@@ -55,7 +55,7 @@ class GoogleSheet:
         config_file = config_file or os.getenv('SHEET_CONFIG_PATH', 'config/google_sheet_config.json')
         creds_file = creds_file or os.getenv('GOOGLE_CREDS', 'credentials.json')
 
-        # Load config with explicit UTF-8 encoding for cross-platform consistency
+        # Explicitly specify UTF-8 encoding for clarity and future-proofing
         try:
             with open(config_file, 'r', encoding='utf-8') as cf:
                 cfg = json.load(cf)
@@ -71,7 +71,7 @@ class GoogleSheet:
             raise RuntimeError(
                 f"An unexpected error occurred while reading config file '{config_file}': {e}"
             )
-        # Authenticate and fetch sheet using google-auth
+        # Authenticate using google-auth and fetch sheet using gspread
         scopes = ['https://www.googleapis.com/auth/spreadsheets']
         try:
             creds = Credentials.from_service_account_file(creds_file, scopes=scopes)
