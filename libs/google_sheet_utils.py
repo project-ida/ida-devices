@@ -232,6 +232,23 @@ class GoogleSheet:
                 updated = True
         return updated
 
+    @staticmethod
+    def col_idx_to_letter(idx: int) -> str:
+        """
+        Convert a 1-based column index to Excel-style column letters.
+
+        Parameters:
+        idx (int): 1-based column index (e.g., 1 -> 'A', 27 -> 'AA')
+
+        Returns:
+        str: Corresponding column letters.
+        """
+        letters = ""
+        while idx > 0:
+            idx, remainder = divmod(idx - 1, 26)
+            letters = chr(65 + remainder) + letters
+        return letters
+
     def _push_row_update(self, row_idx: int, row: List[str]) -> None:
         """
         Push the updated row to the Google Sheet.
@@ -240,8 +257,9 @@ class GoogleSheet:
         row_idx (int): The row index in the sheet.
         row (List[str]): The updated row data.
         """
+        end_col_letter = self.col_idx_to_letter(len(row))
         self._retry_api_call(
             self.ws.update,
-            f"A{row_idx}:{chr(64+len(row))}{row_idx}",
+            f"A{row_idx}:{end_col_letter}{row_idx}",
             [row]
         )
