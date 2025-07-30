@@ -246,7 +246,9 @@ def _load_parameter_map(xml_path: Path) -> Tuple[Dict[str, str], List[str]]:
     """
     text = xml_path.read_text(encoding='utf-8').splitlines()
     try:
-        tree = ET.fromstring("\n".join(text))
+        # Use ET.parse for efficiency and reliability
+        tree = ET.parse(xml_path)
+        root = tree.getroot()
     except ET.ParseError as e:
         logging.warning(f"⚠️  Malformed XML in '{xml_path}': {e}")
         return {}, text
@@ -254,7 +256,7 @@ def _load_parameter_map(xml_path: Path) -> Tuple[Dict[str, str], List[str]]:
         logging.warning(f"⚠️  Error reading XML in '{xml_path}': {e}")
         return {}, text
     params: Dict[str, str] = {}
-    for entry in tree.findall(f'.//{PARAMETERS_TAG}/{ENTRY_TAG}'):
+    for entry in root.findall(f'.//{PARAMETERS_TAG}/{ENTRY_TAG}'):
         key = entry.findtext(KEY_TAG, '').strip()
         val_el = entry.find(VALUE_TAG)
         if val_el is not None:

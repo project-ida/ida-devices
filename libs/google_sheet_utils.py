@@ -29,7 +29,7 @@ from datetime import datetime
 import logging
 
 import gspread
-from oauth2client.service_account import ServiceAccountCredentials
+from google.oauth2.service_account import Credentials  # Modern, secure alternative
 
 class GoogleSheet:
     """
@@ -45,12 +45,18 @@ class GoogleSheet:
     def __init__(self, config_file: str = None, creds_file: str = None):
         """
         Initialize the GoogleSheet object, loading config and authenticating.
+
+        Uses google-auth for secure authentication.
+
+        Parameters:
+        config_file (str, optional): Path to the sheet config JSON file.
+        creds_file (str, optional): Path to the Google service account credentials JSON file.
         """
         config_file = config_file or os.getenv('SHEET_CONFIG_PATH', 'config/google_sheet_config.json')
         creds_file = creds_file or os.getenv('GOOGLE_CREDS', 'credentials.json')
 
-        # Load config
-        with open(config_file, 'r') as cf:
+        # Load config with explicit UTF-8 encoding for cross-platform consistency
+        with open(config_file, 'r', encoding='utf-8') as cf:
             cfg = json.load(cf)
             self.spreadsheet_id = cfg['spreadsheet_id']
             self.sheet_name = cfg['sheet_name']
@@ -64,9 +70,9 @@ class GoogleSheet:
             self.digitizer_header = cols['digitizer_header']
             self.config_header = cols['compas_config_file_header']
 
-        # Authenticate and fetch sheet
+        # Authenticate and fetch sheet using google-auth
         scopes = ['https://www.googleapis.com/auth/spreadsheets']
-        creds = ServiceAccountCredentials.from_json_keyfile_name(creds_file, scopes)
+        creds = Credentials.from_service_account_file(creds_file, scopes=scopes)
         gc = gspread.authorize(creds)
         self.ws = gc.open_by_key(self.spreadsheet_id).worksheet(self.sheet_name)
         all_rows = self.ws.get_all_values()
