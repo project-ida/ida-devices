@@ -196,6 +196,9 @@ def process_run_folder(
     settings_path = run_folder / SETTINGS_FILENAME
     ensure_run_row_exists(sheet, run_name, start_dt, stop_dt, refresh=refresh)
     digitizer = extract_digitizer_info(str(settings_path))
+    # TEMPORARY OVERRIDE: Map DT5730S (31050) to 'caen8ch' for sheet entry
+    if digitizer == "DT5730S (31050)":
+        digitizer = "caen8ch"
     matches = find_matching_config_files(str(settings_path), str(config_dir))
     config_files = format_config_files(matches)
     values = prepare_update_values(sheet, start_dt, stop_dt, digitizer, config_files)
