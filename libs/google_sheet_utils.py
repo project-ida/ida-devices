@@ -91,6 +91,8 @@ class GoogleSheet:
             self.daq_pc_header = cols['daq_laptop_name_header']
             self.digitizer_header = cols['digitizer_header']
             self.config_header = cols['compas_config_file_header']
+            self.power_supply_channel_header = cols['power_supply_channel_header']
+            self.bias_voltage_header = cols['bias_voltage_header']
             self.spreadsheet_id = cfg['spreadsheet_id']
             self.sheet_name = cfg['sheet_name']
             self.header_row = cfg['header_row']
@@ -118,6 +120,8 @@ class GoogleSheet:
         self.COL_DAQ_PC = self.header_to_col[self.daq_pc_header]  # 1-based index
         self.COL_DIGITIZER = self.header_to_col[self.digitizer_header]  # 1-based index
         self.COL_CONFIG = self.header_to_col[self.config_header]  # 1-based index
+        self.COL_POWER_SUPPLY_CHANNEL = self.header_to_col.get(self.power_supply_channel_header)  # 1-based index
+        self.COL_BIAS_VOLTAGE = self.header_to_col.get(self.bias_voltage_header)  # 1-based index
         self.data_rows = all_rows[self.header_row:]
 
     def _retry_api_call(self, fn, *args, retries: int = 3, delay: float = 1.0, **kwargs):
@@ -299,3 +303,55 @@ class GoogleSheet:
             f"A{row_idx}:{end_col_letter}{row_idx}",
             [row]
         )
+    
+    def insert_power_supply_rows(
+        self,
+        run_name: str,
+        channels: List[int],
+        voltages: List[float]
+    ) -> None:
+        """
+        Insert power supply channel and voltage info as new rows directly below the run entry.
+
+        Each channel/voltage pair is written in its own row, in the respective columns.
+        If power supply rows already exist, insert new rows between the run row and the next run entry.
+
+        Parameters:
+        run_name (str): Name of the run.
+        channels (List[int]): List of channel numbers.
+        voltages (List[float]): List of voltages for each channel.
+
+        Edge Cases:
+        - If columns are missing, logs a warning and skips update.
+        - If no run row is found, logs a warning and skips update.
+        """
+        self.refresh()
+        run_row_idx = self.find_run_row(run_name, refresh=False)
+        if run_row_idx is None:
+            logging.warning(f"Run '{run_name}' not found in sheet; cannot insert power supply rows.")
+            return
+
+        col_channel = self.COL_POWER_SUPPLY_CHANNEL
+        col_voltage = self.COL_BIAS_VOLTAGE
+        if col_channel is None or col_voltage is None:
+            logging.warning("Power supply columns not found in sheet headers.")
+            return
+
+        new_rows = []
+        for ch, v in zip(channels, voltages):
+            row = [''] * len(self.headers)
+            row[col_channel - 1] = str(ch)
+            row[col_voltage - 1] = f"{v:.2f}"
+            new_rows.append(row)
+
+        insert_idx = run_row_idx + 1
+        for i, r in enumerate(self.data_rows[insert_idx - self.header_row - 1:], start=insert_idx):
+            if r[self.COL_ID - 1].strip():
+                break
+            insert_idx += 1
+
+        for offset, row in enumerate(new_rows):
+            self._retry_api_call(self.ws.insert_row, row, index=insert_idx + offset)
+            self.data_rows.insert(insert_idx - self.header_row - 1 + offset, row)
+
+        logging.info(f"Inserted {len(new_rows)} power supply rows below run '{run_name}'.")

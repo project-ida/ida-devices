@@ -39,6 +39,9 @@ from libs.settings_extras import extract_digitizer_info, find_matching_config_fi
 # Import our settings_validator from libs/
 from libs.settings_validator import report_parameter_diffs
 
+# Import CAENpy for power supply interaction
+from CAENpy.CAENDesktopHighVoltagePowerSupply import CAENDesktopHighVoltagePowerSupply
+
 # Magic string constants
 SETTINGS_FILENAME = 'settings.xml'
 END_FILE_SUFFIX = '.txt'
@@ -235,6 +238,56 @@ def initial_scan(root_folder: Path) -> List[Tuple[datetime, Optional[datetime], 
     runs.sort(key=lambda t: t[0])
     return runs
 
+
+def find_most_recent_active_run(
+    runs: List[Tuple[datetime, Optional[datetime], str, Path]]
+) -> Optional[Tuple[str, Path]]:
+    """
+    Find the most recent run that is still active (no end file).
+
+    Parameters:
+    runs (List[Tuple[datetime, Optional[datetime], str, Path]]): List of detected runs.
+
+    Returns:
+    Optional[Tuple[str, Path]]: (run_name, run_folder) of the most recent active run, or None.
+    """
+    active_runs = [(start_dt, run_name, run_folder)
+                   for start_dt, stop_dt, run_name, run_folder in runs
+                   if stop_dt is None]
+    if not active_runs:
+        return None
+    if len(active_runs) > 1:
+        logging.warning(
+            f"Multiple active runs detected: {[r[1] for r in active_runs]}. "
+            "Only the most recent will be updated with power supply info."
+        )
+    # Sort by start_dt descending, pick the most recent
+    active_runs.sort(reverse=True)
+    _, run_name, run_folder = active_runs[0]
+    return run_name, run_folder
+
+def read_power_supply_info(port: str = '/dev/ttyACM0') -> Tuple[List[int], List[float]]:
+    """
+    Read channel numbers and voltages from the CAEN power supply.
+
+    Parameters:
+    port (str): Serial port for CAEN device.
+
+    Returns:
+    Tuple[List[int], List[float]]: List of channel numbers and their voltages.
+    """
+    try:
+        caen = CAENDesktopHighVoltagePowerSupply(port=port)
+        channels = []
+        voltages = []
+        for n_channel, channel in enumerate(caen.channels):
+            channels.append(n_channel)
+            voltages.append(channel.V_mon)
+        return channels, voltages
+    except Exception as e:
+        logging.warning(f"Could not read CAEN power supply: {e}")
+        return [], []
+
 # -------------------------------------------------------------------
 # Event handler
 # -------------------------------------------------------------------
@@ -327,6 +380,9 @@ class DAQHandler(FileSystemEventHandler):
             config_dir=self.config_dir,
             start_dt=start_dt
         )
+        # Read power supply info and update the sheet
+        channels, voltages = read_power_supply_info()
+        update_power_supply_in_sheet(self.sheet, run_name, channels, voltages)  
 
     def _handle_run_end(self, run_name: str, run_folder: Path, path: Path) -> None:
         """
@@ -427,6 +483,14 @@ def main() -> None:
             stop_dt=stop_dt,
             refresh=False  # <--- Only refresh once at the start
         )
+
+    # Find the most recent active run (if any) and update it with power supply info
+    active = find_most_recent_active_run(runs)
+    if active:
+        run_name, run_folder = active
+        logging.info(f"Active run detected at startup: {run_name}")
+        channels, voltages = read_power_supply_info()
+        sheet.insert_power_supply_rows(run_name, channels, voltages)
 
     # Start live monitoring
     handler = DAQHandler(watch_folder_path, sheet, config_dir)
