@@ -140,11 +140,12 @@ def select_option(stdscr, options, prompt, original_options=None, show_download_
                 return None, True
             elif selected == ".. (Go up)":
                 return "..", False
-            # Adjust index to account for special entries
-            adjusted_idx = current_row - (2 if show_download_option and len(options) > 0 else 1 if len(options) > 0 else 0)
-            if adjusted_idx < 0 or adjusted_idx >= len(options):
+            # Calculate the index in the original options list
+            special_entries = (1 if show_download_option else 0) + (1 if len(options) > 0 and options[0] != ".." else 0)
+            option_idx = current_row - special_entries
+            if option_idx < 0 or option_idx >= len(options):
                 return None, False
-            return (original_options[options[adjusted_idx]] if original_options else options[adjusted_idx]), False
+            return (original_options[options[option_idx]] if original_options else options[option_idx]), False
 
 def copy_folder(remote_path, local_path):
     """Copy the selected folder recursively to ~/GoogleDrive."""
