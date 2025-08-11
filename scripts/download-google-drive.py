@@ -55,7 +55,7 @@ import re
 def show_waiting_message(stdscr, message="Please wait..."):
     stdscr.clear()
     max_y, max_x = stdscr.getmaxyx()
-    safe_addstr(stdscr, max_y // 2, max_x // 2 - len(message) // 2, message, curses.A_BOLD)
+    safe_addstr(stdscr, max_y // 2, max_x // 2 - len(message) // 2, message, curses.A_BOLD, max_x)
     stdscr.refresh()
 
 def run_command(command):
@@ -86,21 +86,33 @@ def list_folders(remote_path):
 
 def sanitize_string(text):
     """Sanitize string to remove problematic characters and normalize."""
-    # Normalize Unicode and convert to ASCII
-    normalized = unicodedata.normalize('NFKD', text).encode('ascii', 'ignore').decode('ascii')
-    # Replace non-alphanumeric characters (except underscores and hyphens) with underscore
-    sanitized = re.sub(r'[^a-zA-Z0-9_-]', '_', normalized)
-    return sanitized if sanitized.strip() else "Unprintable"
-
-def safe_addstr(stdscr, y, x, text, attr=0):
-    """Safely add a string to the curses screen."""
     try:
-        safe_text = sanitize_string(text)
+        # Normalize Unicode and convert to ASCII
+        normalized = unicodedata.normalize('NFKD', text).encode('ascii', 'ignore').decode('ascii')
+        # Replace non-alphanumeric characters (except underscores and hyphens) with underscore
+        sanitized = re.sub(r'[^a-zA-Z0-9_-]', '_', normalized)
+        # Ensure the string is not empty
+        return sanitized if sanitized.strip() else "Unprintable"
+    except Exception as e:
+        with open("curses_error.log", "a") as f:
+            f.write(f"Error sanitizing '{text}': {e}\n")
+        return "Unprintable"
+
+def safe_addstr(stdscr, y, x, text, attr=0, max_x=None):
+    """Safely add a string to the curses screen, respecting terminal bounds."""
+    try:
+        if max_x is None:
+            max_y, max_x = stdscr.getmaxyx()
+        # Truncate text to fit within max_x, accounting for x offset
+        safe_text = sanitize_string(text)[:max_x - x - 1]
         stdscr.addstr(y, x, safe_text, attr)
     except curses.error as e:
-        stdscr.addstr(y, x, "[Error: Unprintable]", attr)
         with open("curses_error.log", "a") as f:
-            f.write(f"Error displaying '{text}' at ({y}, {x}): {e}\n")
+            f.write(f"Error displaying '{text}' at ({y}, {x}, max_x={max_x}): {e}\n")
+        try:
+            stdscr.addstr(y, x, "[Error: Unprintable]", attr)
+        except curses.error:
+            pass  # Prevent recursive errors
 
 def select_option(stdscr, options, prompt, original_options=None, show_download_option=False):
     """Display a scrollable menu using curses with optional download action."""
@@ -111,8 +123,14 @@ def select_option(stdscr, options, prompt, original_options=None, show_download_
     while True:
         stdscr.clear()
         max_y, max_x = stdscr.getmaxyx()
+        # Validate terminal size
+        if max_y < 5:
+            stdscr.addstr(0, 0, "Terminal too small. Resize and try again.")
+            stdscr.refresh()
+            stdscr.getch()
+            return None, False
         max_display = max_y - 5  # 1 for prompt, 1 for help, 3 margin
-        safe_addstr(stdscr, 0, 0, sanitize_string(prompt), curses.A_BOLD)
+        safe_addstr(stdscr, 0, 0, sanitize_string(prompt)[:max_x-1], curses.A_BOLD, max_x)
         display_options = options.copy()
         if show_download_option:
             display_options.insert(0, "Download this folder")
@@ -124,10 +142,10 @@ def select_option(stdscr, options, prompt, original_options=None, show_download_
         for i, option in enumerate(visible_options):
             actual_idx = start_idx + i
             prefix = "> " if actual_idx == current_row else "  "
-            safe_addstr(stdscr, i + 2, 0, f"{prefix}{option}",
-                        curses.A_REVERSE if actual_idx == current_row else 0)
+            safe_addstr(stdscr, i + 2, 0, f"{prefix}{option}", 
+                        curses.A_REVERSE if actual_idx == current_row else 0, max_x)
         help_line = f"Use ↑ ↓ to scroll, Enter to select ({current_row + 1}/{len(display_options)})"
-        safe_addstr(stdscr, max_display + 3, 0, help_line[:max_x])
+        safe_addstr(stdscr, max_display + 3, 0, help_line[:max_x-1], 0, max_x)
         stdscr.refresh()
         key = stdscr.getch()
         if key == curses.KEY_UP and current_row > 0:
@@ -136,6 +154,8 @@ def select_option(stdscr, options, prompt, original_options=None, show_download_
             current_row += 1
         elif key == 10:  # Enter
             selected = display_options[current_row]
+            with open("curses_error.log", "a") as f:
+                f.write(f"Selection: current_row={current_row}, start_idx={start_idx}, selected={selected}\n")
             if selected == "Download this folder":
                 return None, True
             elif selected == ".. (Go up)":
