@@ -172,7 +172,9 @@ def process_root_file(file_path, table_prefix):
             df["Timestamp"] = df["Timestamp"] / 1e12
             # Calculate PSP with divide-by-zero protection
             with np.errstate(divide='ignore', invalid='ignore'):
-                df["PSP"] = np.where(df["Energy"] != 0, (df["Energy"] - df["EnergyShort"]) / df["Energy"], 0.0)
+                E  = df["Energy"].astype(np.float64)
+                Es = df["EnergyShort"].astype(np.float64)
+                df["PSP"] = np.where(E != 0, (E - Es) / E, 0.0)
             
             # Calculate absolute times
             abs_times = df["Timestamp"] + acquisition_start_timestamp

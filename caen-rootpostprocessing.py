@@ -209,8 +209,8 @@ def process_root_file(file_path, table_prefix, channel_number, acquisition_start
                     continue
 
                 timestamps = arrays["Timestamp"] / 1e12
-                energy = arrays["Energy"]
-                energy_short = arrays["EnergyShort"]
+                energy = arrays["Energy"].astype(np.float64)
+                energy_short = arrays["EnergyShort"].astype(np.float64)
 
                 # PSP calculation with divide-by-zero protection
                 with np.errstate(divide='ignore', invalid='ignore'):
