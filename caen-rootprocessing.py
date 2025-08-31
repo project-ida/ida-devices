@@ -117,18 +117,21 @@ def estimate_acquisition_start(file_path):
 
         if not settings_file:
             print(f"Error: neither settings.xml nor settings.txt found in {parent_folder}")
-            return None, None
+            return None, None, None  # (datetime, seconds(float), nanoseconds(int))
 
-        settings_mtime = os.path.getmtime(settings_file)
-        acquisition_start_datetime = datetime.fromtimestamp(settings_mtime)
-        acquisition_start_timestamp = settings_mtime
+        st = os.stat(settings_file)
+        # Exact ns if available (Py 3.7+); otherwise fall back from float seconds
+        acquisition_start_mtime_ns = getattr(st, "st_mtime_ns", int(st.st_mtime * 1_000_000_000))
+        acquisition_start_datetime = datetime.fromtimestamp(acquisition_start_mtime_ns // 1_000_000_000)
+        acquisition_start_timestamp = st.st_mtime  # keep float seconds for existing prints/logic
 
         print(f"Last modified time of {os.path.basename(settings_file)}: {acquisition_start_datetime}")
-        return acquisition_start_datetime, acquisition_start_timestamp
+        return acquisition_start_datetime, acquisition_start_timestamp, acquisition_start_mtime_ns
 
     except Exception as e:
         print(f"Error accessing settings file for {file_path}: {e}")
-        return None, None
+        return None, None, None
+
 
 
 
@@ -165,73 +168,73 @@ def process_root_file(file_path, table_prefix):
     try:
         print("----------START-------------")
         
-        acquisition_start_datetime, acquisition_start_timestamp = estimate_acquisition_start(file_path)
+        # NOTE: now returns a 3rd value: acquisition_start_mtime_ns
+        acquisition_start_datetime, acquisition_start_timestamp, acquisition_start_mtime_ns = estimate_acquisition_start(file_path)
         print(f"--> acquisition_start_datetime: {acquisition_start_datetime}")
-        if acquisition_start_timestamp is None:
+        if acquisition_start_mtime_ns is None:
             print(f"Skipping file {file_path} due to missing settings.xml to extract experiment start time.")
             return False, None, None
 
         with uproot.open(file_path) as file:
             tree = file["Data_R"]
 
-            # --- ONLY CHANGE: detect whether EnergyShort exists and import accordingly ---
+            # Detect whether EnergyShort exists and import accordingly (PSP-only change)
             has_energy_short = "EnergyShort" in set(tree.keys())
             branches_to_import = ["Timestamp", "Energy"] + (["EnergyShort"] if has_energy_short else [])
-            # ---------------------------------------------------------------------------
-
             df = tree.arrays(branches_to_import, library="pd")
             
             if len(df["Timestamp"]) == 0:
                 print(f"No data found in {file_path}")
                 return False, None, None
 
-            # Convert timestamps to seconds (unchanged)
-            df["Timestamp"] = df["Timestamp"] / 1e12
+            # ---- Preserve integer picoseconds for exact timing ----
+            # Timestamp is already integer picoseconds since experiment start
+            ts_rel_ps = df["Timestamp"].astype("int64").copy()
+            # -------------------------------------------------------
 
-            # compute PSP if EnergyShort exists; else set PSP to NULL ---
+            # PSP logic (only change requested)
             if has_energy_short:
                 with np.errstate(divide='ignore', invalid='ignore'):
                     E  = df["Energy"].astype(np.float64)
                     Es = df["EnergyShort"].astype(np.float64)
-                    df["PSP"] = np.where(E != 0, (E - Es) / E, 0.0) 
+                    df["PSP"] = np.where(E != 0, (E - Es) / E, 0.0)
             else:
                 df["PSP"] = None  # EnergyShort absent → PSP should be NULL in DB
-            # ---------------------------------------------------------------------------
 
-            # Calculate absolute times
-            abs_times = df["Timestamp"] + acquisition_start_timestamp
-
-            # Calculate start and end times for filename
+            # Keep existing float-based path for start/end naming and prints (unchanged look)
+            df["Timestamp"] = df["Timestamp"] / 1e12                      # ps → s (float)
+            abs_times = df["Timestamp"] + acquisition_start_timestamp      # s (float)
             start_time = min(abs_times)
-            end_time = max(abs_times)
+            end_time   = max(abs_times)
             start_time_str = datetime.fromtimestamp(start_time).strftime('%Y%m%d_%H%M%S')
-            end_time_str = datetime.fromtimestamp(end_time).strftime('%Y%m%d_%H%M%S')
+            end_time_str   = datetime.fromtimestamp(end_time).strftime('%Y%m%d_%H%M%S')
 
-            total_events = 0
-
-            # Collect events for batch insertion 
+            # Build event rows with exact integer picoseconds
+            acq_start_ps = acquisition_start_mtime_ns * 1_000  # ns → ps
             event_rows = []
-            for abs_time, psp, energy in zip(abs_times, df["PSP"], df["Energy"]):
-                time_value = datetime.fromtimestamp(abs_time)
-                time_floor = np.floor(abs_time)
-                subsecond_ps = int((abs_time - time_floor) * 1e12)
+            for rel_ps, psp, energy in zip(ts_rel_ps, df["PSP"], df["Energy"]):
+                abs_ps_total = acq_start_ps + int(rel_ps)  # epoch picoseconds (integer math only)
 
-                # allow NULL for PSP in DB when EnergyShort missing or NaN
+                # Split into whole seconds + picosecond remainder for DB
+                sec = abs_ps_total // 1_000_000_000_000
+                subsecond_ps = abs_ps_total %  1_000_000_000_000
+
+                # Construct SQL 'time' with microseconds (same format as before)
+                time_value = datetime.fromtimestamp(int(sec)) + timedelta(microseconds=subsecond_ps // 1_000_000)
+
+                # PSP None-safe
                 if psp is None or (isinstance(psp, float) and np.isnan(psp)):
                     psp_out = None
                 else:
                     psp_out = float(psp)
 
-                event_rows.append((time_value, [psp_out, float(energy)], subsecond_ps))
+                event_rows.append((time_value, [psp_out, float(energy)], int(subsecond_ps)))
 
-            # Create new connection for event insertion
+            # DB insert (unchanged)
             conn = connect_to_db()
             try:
-                # Insert events in batches
                 insert_many_timestamps_to_db(conn, table_name, event_rows, batch_size=1000)
-                total_events += len(event_rows)
-                
-                print(f"🎉 Done: inserted {total_events} events from {os.path.basename(file_path)}")
+                print(f"🎉 Done: inserted {len(event_rows)} events from {os.path.basename(file_path)}")
                 print(f"current file start time: {datetime.fromtimestamp(start_time).strftime('%Y-%m-%d %H:%M:%S')}")
                 print(f"current file end time: {datetime.fromtimestamp(end_time).strftime('%Y-%m-%d %H:%M:%S')}")
                 return True, start_time_str, end_time_str
@@ -240,6 +243,7 @@ def process_root_file(file_path, table_prefix):
     except Exception as e:
         print(f"Failed to process {file_path}: {e}")
         return False, None, None
+
 
 
 # Monitor folder for modified ROOT files
