@@ -126,13 +126,15 @@ def insert_root_file_to_db(conn, time_value, computer, daq_folder, rel_dir, file
 def get_table_name_from_channel(channel_number, table_prefix):
     return f"{table_prefix}_ch{channel_number}"
 
-# Function to get channel number from file name
+# Function to get channel from file name
 def get_channel_number_from_filename(file_path):
-    match = re.search(r'CH(\d)', file_path)
+    match = re.search(r'CH([0-9A-Z])', os.path.basename(file_path))
     if match:
         return match.group(1)
     else:
-        raise ValueError(f"Could not extract channel number from file name: {file_path}")
+        raise ValueError(f"Could not extract channel from file name: {file_path}")
+
+
 
 # Function to extract the number before .root for sorting
 def get_file_number(filename):
@@ -373,10 +375,10 @@ def main():
         
         # Parse and validate channel numbers
         try:
-            channels = [ch.strip() for ch in channel_input.split(",")]
+            channels = [ch.strip().upper() for ch in channel_input.split(",")]
             for ch in channels:
-                if not ch.isdigit():
-                    raise ValueError(f"Invalid channel number: {ch}")
+                if not re.fullmatch(r'[0-9A-Z]', ch):
+                    raise ValueError(f"Invalid channel: {ch}")
             print(f"Processing channels: {channels}")
         except ValueError as e:
             print(f"Error: {e}")
