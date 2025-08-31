@@ -41,7 +41,7 @@ import uproot
 import psycopg2
 from psycopg2.extras import execute_values
 import re
-from datetime import datetime
+from datetime import datetime, timedelta
 import numpy as np
 from pathlib import Path
 import glob
@@ -146,8 +146,8 @@ def get_acquisition_start(df):
         sys.exit(1)
     parent_folder = os.path.dirname(os.path.dirname(file_path))
     try:
-        acquisition_start_timestamp = get_acquisition_start_from_settings(parent_folder)
-        return acquisition_start_timestamp
+        acq_start_sec, acq_start_ns = get_acquisition_start_from_settings(parent_folder)
+        return acq_start_sec, acq_start_ns
     except Exception as e:
         print(f"Error retrieving experiment start time: {e}")
         sys.exit(1)
@@ -173,29 +173,31 @@ def get_acquisition_start_from_settings(parent_folder):
             while True:
                 start_time_str = input("Enter experiment start time (YYYY-MM-DD HH:MM:SS): ").strip()
                 try:
-                    # Parse user input to datetime
                     start_time = datetime.strptime(start_time_str, '%Y-%m-%d %H:%M:%S')
-                    # Convert to Unix timestamp
-                    acquisition_start_timestamp = start_time.timestamp()
+                    acq_start_sec = start_time.timestamp()
+                    # derive integer ns from the float seconds for consistency
+                    acq_start_ns = int(acq_start_sec * 1_000_000_000)
                     print(f"User-provided start time: {start_time}")
-                    return acquisition_start_timestamp
+                    return acq_start_sec, acq_start_ns
                 except ValueError as e:
                     print(f"Invalid date format: {e}. Please use YYYY-MM-DD HH:MM:SS (e.g., 2025-05-19 17:06:07)")
 
         # If a settings file exists, use its last modified time
-        settings_mtime = os.path.getmtime(settings_file)
-        acquisition_start_timestamp = settings_mtime
-        print(f"Last modified time of {os.path.basename(settings_file)}: {datetime.fromtimestamp(settings_mtime)}")
-        return acquisition_start_timestamp
+        st = os.stat(settings_file)
+        acq_start_ns = getattr(st, "st_mtime_ns", int(st.st_mtime * 1_000_000_000))  # exact if available
+        acq_start_sec = st.st_mtime  # float seconds (kept for prints/compat)
+
+        print(f"Last modified time of {os.path.basename(settings_file)}: {datetime.fromtimestamp(acq_start_ns // 1_000_000_000)}")
+        return acq_start_sec, acq_start_ns
 
     except Exception as e:
         print(f"Error accessing settings file or processing start time in {parent_folder}: {e}")
         raise
 
 
-def process_root_file(file_path, table_prefix, channel_number, acquisition_start_timestamp, conn):
+
+def process_root_file(file_path, table_prefix, channel_number, acquisition_start_sec, acquisition_start_ns, conn):
     try:
-        branches_to_import = ["Timestamp", "Energy", "EnergyShort"]
         table_name = get_table_name_from_channel(channel_number, table_prefix)
         total_events = 0
         chunk_number = 0
@@ -203,10 +205,18 @@ def process_root_file(file_path, table_prefix, channel_number, acquisition_start
         print(f"🔄 Streaming events from {os.path.basename(file_path)}")
 
         with uproot.open(file_path) as f:
+            # Find the first TTree
             tree = next(obj for k, obj in f.items() if isinstance(obj, uproot.behaviors.TTree.TTree))
+
+            # Detect EnergyShort presence
+            has_energy_short = "EnergyShort" in set(tree.keys())
+            branches_to_import = ["Timestamp", "Energy"] + (["EnergyShort"] if has_energy_short else [])
 
             total_events = 0
             chunk_number = 0
+
+            # For filename start/end — keep behaviour (compute from the *last* chunk, same as before)
+            last_chunk_abs_sec = None
 
             for arrays in tree.iterate(
                 branches_to_import,
@@ -219,22 +229,42 @@ def process_root_file(file_path, table_prefix, channel_number, acquisition_start
                     print(f"⚠️  Chunk {chunk_number} is empty. Skipping.")
                     continue
 
-                timestamps = arrays["Timestamp"] / 1e12
+                # --- TIMING: preserve exact picoseconds (Timestamp already in ps since start) ---
+                rel_ps = arrays["Timestamp"].astype(np.int64)  # integer picoseconds since experiment start
+                acq_start_ps = acquisition_start_ns * 1_000     # ns → ps (integer)
+                abs_ps_total = acq_start_ps + rel_ps            # epoch picoseconds (integer)
+
+                # Optional float seconds for the "start/end" prints (mimics previous style)
+                abs_sec_float = abs_ps_total / 1_000_000_000_000.0
+                last_chunk_abs_sec = abs_sec_float  # remember last chunk for filename stamps
+                # -----------------------------------------------------------------------------
+
+                # DATA: energies
                 energy = arrays["Energy"].astype(np.float64)
-                energy_short = arrays["EnergyShort"].astype(np.float64)
 
-                # PSP calculation with divide-by-zero protection
-                with np.errstate(divide='ignore', invalid='ignore'):
-                    psp = np.where(energy != 0, (energy - energy_short) / energy, 0.0)
+                # PSP calculation (optional EnergyShort)
+                if has_energy_short:
+                    energy_short = arrays["EnergyShort"].astype(np.float64)
+                    with np.errstate(divide='ignore', invalid='ignore'):
+                        psp = np.where(energy != 0, (energy - energy_short) / energy, 0.0)
+                else:
+                    # Missing EnergyShort → PSP should be NULL in DB
+                    psp = np.full(energy.shape, np.nan, dtype=np.float64)
 
-                abs_times = timestamps + acquisition_start_timestamp
-
+                # Build rows
                 event_rows = []
-                for abs_time, e, p in zip(abs_times, energy, psp):
-                    time_value = datetime.fromtimestamp(abs_time)
-                    time_floor = np.floor(abs_time)
-                    subsecond_ps = int((abs_time - time_floor) * 1e12)
-                    event_rows.append((time_value, [float(p), float(e)], subsecond_ps))
+                for ps_abs, e, p in zip(abs_ps_total, energy, psp):
+                    # Split epoch picoseconds into (seconds, ps remainder)
+                    sec = ps_abs // 1_000_000_000_000
+                    sub_ps = int(ps_abs % 1_000_000_000_000)
+
+                    # DB 'time' (timestamp with microseconds) — same appearance as before
+                    time_value = datetime.fromtimestamp(int(sec)) + timedelta(microseconds=sub_ps // 1_000_000)
+
+                    # PSP None-safe to get SQL NULL in double[] instead of NaN
+                    p_out = None if (not np.isfinite(p)) else float(p)
+
+                    event_rows.append((time_value, [p_out, float(e)], sub_ps))
 
                 insert_many_timestamps_to_db(conn, table_name, event_rows, batch_size=1000)
                 total_events += len(event_rows)
@@ -245,11 +275,12 @@ def process_root_file(file_path, table_prefix, channel_number, acquisition_start
                 print(f"⚠️  No events found in {file_path}")
                 return False, None, None
 
-            # Calculate start and end times for renaming
-            start_time = min(abs_times)
-            end_time = max(abs_times)
+            # --- start/end strings (use last chunk, preserving your previous behaviour) ---
+            start_time = float(np.min(last_chunk_abs_sec))
+            end_time   = float(np.max(last_chunk_abs_sec))
             start_time_str = datetime.fromtimestamp(start_time).strftime('%Y%m%d_%H%M%S')
-            end_time_str = datetime.fromtimestamp(end_time).strftime('%Y%m%d_%H%M%S')
+            end_time_str   = datetime.fromtimestamp(end_time).strftime('%Y%m%d_%H%M%S')
+            # ------------------------------------------------------------------------------
 
             print(f"🎉 Done: inserted {total_events} events from {os.path.basename(file_path)}")
             print(f"current file start time: {datetime.fromtimestamp(start_time).strftime('%Y-%m-%d %H:%M:%S')}")
@@ -407,7 +438,8 @@ def main():
 
     try:
         # Get experiment start time (needed because ROOT timestamps are relative to the start of the experiment) 
-        acquisition_start_timestamp = get_acquisition_start(df)
+        acquisition_start_sec, acquisition_start_ns = get_acquisition_start(df)
+
 
         # Process unprocessed files
         total_files = len(df)
@@ -425,9 +457,11 @@ def main():
         
                 if os.path.exists(file_path):
                     print(f"Processing file {current_file_number} out of {total_files}: {os.path.basename(file_path)}")
-                    print(f"Experiment start time: {datetime.fromtimestamp(acquisition_start_timestamp).strftime('%Y-%m-%d %H:%M:%S')}")
+                    print(f"Experiment start time: {datetime.fromtimestamp(acquisition_start_sec).strftime('%Y-%m-%d %H:%M:%S')}")
                     channel_number = get_channel_number_from_filename(file_path)
-                    success, start_time_str, end_time_str = process_root_file(file_path, table_prefix, channel_number, acquisition_start_timestamp, conn)
+                    success, start_time_str, end_time_str = process_root_file(
+                        file_path, table_prefix, channel_number, acquisition_start_sec, acquisition_start_ns, conn
+                    )
                     if success:
                         # Determine filename and path for metadata
                         filename = os.path.basename(file_path)
