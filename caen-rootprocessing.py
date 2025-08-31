@@ -173,21 +173,31 @@ def process_root_file(file_path, table_prefix):
 
         with uproot.open(file_path) as file:
             tree = file["Data_R"]
-            branches_to_import = ["Timestamp", "Energy", "EnergyShort"]
+
+            # --- ONLY CHANGE: detect whether EnergyShort exists and import accordingly ---
+            has_energy_short = "EnergyShort" in set(tree.keys())
+            branches_to_import = ["Timestamp", "Energy"] + (["EnergyShort"] if has_energy_short else [])
+            # ---------------------------------------------------------------------------
+
             df = tree.arrays(branches_to_import, library="pd")
             
             if len(df["Timestamp"]) == 0:
                 print(f"No data found in {file_path}")
                 return False, None, None
 
-            # Convert timestamps to seconds
+            # Convert timestamps to seconds (unchanged)
             df["Timestamp"] = df["Timestamp"] / 1e12
-            # Calculate PSP with divide-by-zero protection
-            with np.errstate(divide='ignore', invalid='ignore'):
-                E  = df["Energy"].astype(np.float64)
-                Es = df["EnergyShort"].astype(np.float64)
-                df["PSP"] = np.where(E != 0, (E - Es) / E, 0.0)
-            
+
+            # compute PSP if EnergyShort exists; else set PSP to NULL ---
+            if has_energy_short:
+                with np.errstate(divide='ignore', invalid='ignore'):
+                    E  = df["Energy"].astype(np.float64)
+                    Es = df["EnergyShort"].astype(np.float64)
+                    df["PSP"] = np.where(E != 0, (E - Es) / E, 0.0) 
+            else:
+                df["PSP"] = None  # EnergyShort absent → PSP should be NULL in DB
+            # ---------------------------------------------------------------------------
+
             # Calculate absolute times
             abs_times = df["Timestamp"] + acquisition_start_timestamp
 
@@ -199,13 +209,20 @@ def process_root_file(file_path, table_prefix):
 
             total_events = 0
 
-            # Collect events for batch insertion
+            # Collect events for batch insertion 
             event_rows = []
             for abs_time, psp, energy in zip(abs_times, df["PSP"], df["Energy"]):
                 time_value = datetime.fromtimestamp(abs_time)
                 time_floor = np.floor(abs_time)
                 subsecond_ps = int((abs_time - time_floor) * 1e12)
-                event_rows.append((time_value, [float(psp), float(energy)], subsecond_ps))
+
+                # allow NULL for PSP in DB when EnergyShort missing or NaN
+                if psp is None or (isinstance(psp, float) and np.isnan(psp)):
+                    psp_out = None
+                else:
+                    psp_out = float(psp)
+
+                event_rows.append((time_value, [psp_out, float(energy)], subsecond_ps))
 
             # Create new connection for event insertion
             conn = connect_to_db()
@@ -223,6 +240,7 @@ def process_root_file(file_path, table_prefix):
     except Exception as e:
         print(f"Failed to process {file_path}: {e}")
         return False, None, None
+
 
 # Monitor folder for modified ROOT files
 class ModifiedFileHandler(FileSystemEventHandler):
