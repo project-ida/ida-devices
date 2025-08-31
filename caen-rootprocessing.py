@@ -243,49 +243,58 @@ def process_root_file(file_path, table_prefix):
     except Exception as e:
         print(f"Failed to process {file_path}: {e}")
         return False, None, None
+    
+
+def handle_root_file(file_path, table_prefix):
+    if not file_path.endswith(".root"):
+        return
+    if file_path in processed_files:
+        print(f"Skipping {file_path} because it has already been processed.")
+        return  # Skip processing this file
+    try:
+        # Attempt to process the file
+        file_processed, start_time_str, end_time_str = process_root_file(file_path, table_prefix)
+        if file_processed:
+            # send heartbeat to healthchecks.io to signal that the data collection process is still alive
+            send_heartbeat()
+            # Mark the file as processed
+            processed_files[file_path] = True
+            # Rename the file with start and end times and changed from root to root2
+            original_filename = os.path.basename(file_path)
+            new_filename = f"{start_time_str}-{end_time_str}_{original_filename[:-5]}.root2"
+            new_file_path = os.path.join(os.path.dirname(file_path), new_filename)
+            os.rename(file_path, new_file_path)
+            print(f"File renamed to: {new_file_path}")
+
+            # Create new connection for metadata insertion
+            conn = connect_to_db()
+            try:
+                # Insert root file metadata into the database
+                filename = os.path.basename(new_file_path)
+                directory = os.path.dirname(new_file_path) # /home/cf/caen/daq/test/RAW
+                dir_components = directory.split(os.sep) # ['', 'home', 'cf', 'caen', 'daq', 'test', 'RAW']
+                rel_dir = os.path.join(*dir_components[3:])
+                daq_folder = os.path.basename(os.path.dirname(os.path.dirname(new_file_path))) # test
+                insert_root_file_to_db(conn, end_time_str, computer_name, daq_folder, rel_dir, filename)
+                print(f"Inserted root file meta data into the database")
+            finally:
+                conn.close()
+            
+            print("-----------END------------")
+    except Exception as e:
+        print(f"Error processing file {file_path}: {e}")
 
 
 
 # Monitor folder for modified ROOT files
 class ModifiedFileHandler(FileSystemEventHandler):
     def on_modified(self, event):
-        if event.src_path.endswith(".root"):
-            file_path = event.src_path  # File path for the current event
-            if file_path in processed_files:
-                print(f"Skipping {file_path} because it has already been processed.")
-                return  # Skip processing this file
-            try:
-                # Attempt to process the file
-                file_processed, start_time_str, end_time_str = process_root_file(file_path, table_prefix)
-                if file_processed:
-                    # send heartbeat to healthchecks.io to signal that the data collection process is still alive
-                    send_heartbeat()
-                    # Mark the file as processed
-                    processed_files[file_path] = True
-                    # Rename the file with start and end times and changed from root to root2
-                    original_filename = os.path.basename(file_path)
-                    new_filename = f"{start_time_str}-{end_time_str}_{original_filename[:-5]}.root2"
-                    new_file_path = os.path.join(os.path.dirname(file_path), new_filename)
-                    os.rename(file_path, new_file_path)
-                    print(f"File renamed to: {new_file_path}")
+        if not event.is_directory:
+            handle_root_file(event.src_path, table_prefix)
 
-                    # Create new connection for metadata insertion
-                    conn = connect_to_db()
-                    try:
-                        # Insert root file metadata into the database
-                        filename = os.path.basename(new_file_path)
-                        directory = os.path.dirname(new_file_path) # /home/cf/caen/daq/test/RAW
-                        dir_components = directory.split(os.sep) # ['', 'home', 'cf', 'caen', 'daq', 'test', 'RAW']
-                        rel_dir = os.path.join(*dir_components[3:])
-                        daq_folder = os.path.basename(os.path.dirname(os.path.dirname(new_file_path))) # test
-                        insert_root_file_to_db(conn, end_time_str, computer_name, daq_folder, rel_dir, filename)
-                        print(f"Inserted root file meta data into the database")
-                    finally:
-                        conn.close()
-                    
-                    print("-----------END------------")
-            except Exception as e:
-                print(f"Error processing file {file_path}: {e}")
+    def on_moved(self, event):
+        if not event.is_directory:
+            handle_root_file(event.dest_path, table_prefix)
 
 # Dictionary to track processed files
 processed_files = {}
