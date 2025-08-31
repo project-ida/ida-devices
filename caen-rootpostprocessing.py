@@ -152,14 +152,24 @@ def get_acquisition_start(df):
         print(f"Error retrieving experiment start time: {e}")
         sys.exit(1)
 
-# Function to extract acquisition start time from settings.xml last modified time or user input
+# Function to extract acquisition start time from settings.xml or settings.txt (last modified time) or user input
 def get_acquisition_start_from_settings(parent_folder):
     try:
-        settings_file = os.path.join(parent_folder, "settings.xml")
-        
-        if not os.path.exists(settings_file):
-            print(f"settings.xml not found in {parent_folder}")
-            # Prompt user for start time
+        # Look first for settings.xml, then settings.txt
+        possible_files = [
+            os.path.join(parent_folder, "settings.xml"),
+            os.path.join(parent_folder, "settings.txt"),
+        ]
+
+        settings_file = None
+        for f in possible_files:
+            if os.path.exists(f):
+                settings_file = f
+                break
+
+        if not settings_file:
+            print(f"No settings.xml or settings.txt found in {parent_folder}")
+            # Prompt user for start time if neither exists
             while True:
                 start_time_str = input("Enter experiment start time (YYYY-MM-DD HH:MM:SS): ").strip()
                 try:
@@ -171,16 +181,17 @@ def get_acquisition_start_from_settings(parent_folder):
                     return acquisition_start_timestamp
                 except ValueError as e:
                     print(f"Invalid date format: {e}. Please use YYYY-MM-DD HH:MM:SS (e.g., 2025-05-19 17:06:07)")
-        
-        # Get the last modified time of settings.xml
+
+        # If a settings file exists, use its last modified time
         settings_mtime = os.path.getmtime(settings_file)
         acquisition_start_timestamp = settings_mtime
-        print(f"Last modified time of {settings_file}: {datetime.fromtimestamp(settings_mtime)}")
+        print(f"Last modified time of {os.path.basename(settings_file)}: {datetime.fromtimestamp(settings_mtime)}")
         return acquisition_start_timestamp
-    
+
     except Exception as e:
-        print(f"Error accessing settings.xml or processing start time in {parent_folder}: {e}")
+        print(f"Error accessing settings file or processing start time in {parent_folder}: {e}")
         raise
+
 
 def process_root_file(file_path, table_prefix, channel_number, acquisition_start_timestamp, conn):
     try:

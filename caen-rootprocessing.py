@@ -98,27 +98,39 @@ def insert_root_file_to_db(conn, time_value, computer, daq_folder, rel_dir, file
         cur.execute(query, (time_value, computer, daq_folder, rel_dir, file))
     conn.commit()
 
-# Function to estimate the acquisition start time from settings.xml last modified time
+# Function to estimate the acquisition start time from settings.xml (preferred) or settings.txt (fallback)
 def estimate_acquisition_start(file_path):
     try:
-        # Get the parent directory of the file's folder (one folder up)
         folder = os.path.dirname(file_path)
         parent_folder = os.path.dirname(folder)
-        settings_file = os.path.join(parent_folder, "settings.xml")
-        
-        if not os.path.exists(settings_file):
-            print(f"Error: settings.xml not found in {parent_folder}")
+
+        possible_files = [
+            os.path.join(parent_folder, "settings.xml"),
+            os.path.join(parent_folder, "settings.txt"),
+        ]
+
+        settings_file = None
+        for f in possible_files:
+            if os.path.exists(f):
+                settings_file = f
+                break
+
+        if not settings_file:
+            print(f"Error: neither settings.xml nor settings.txt found in {parent_folder}")
             return None, None
-        
-        # Get the last modified time of settings.xml
+
         settings_mtime = os.path.getmtime(settings_file)
         acquisition_start_datetime = datetime.fromtimestamp(settings_mtime)
         acquisition_start_timestamp = settings_mtime
-        print(f"Last modified time of {settings_file}: {acquisition_start_datetime}")
+
+        print(f"Last modified time of {os.path.basename(settings_file)}: {acquisition_start_datetime}")
         return acquisition_start_datetime, acquisition_start_timestamp
+
     except Exception as e:
-        print(f"Error accessing settings.xml for {file_path}: {e}")
+        print(f"Error accessing settings file for {file_path}: {e}")
         return None, None
+
+
 
 # Function to check if the ROOT file is ready
 def is_root_file_ready(file_path, tree_name='Data_R'):
