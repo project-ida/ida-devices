@@ -145,9 +145,9 @@ def is_root_file_ready(file_path, tree_name='Data_R'):
 def get_table_name_from_channel(channel_number, table_prefix):
     return f"{table_prefix}_ch{channel_number}"
 
-# Function to get channel number from file name
+# Function to get channel "number" from file name
 def get_channel_number_from_filename(file_path):
-    match = re.search(r'CH(\d)', file_path)
+    match = re.search(r'CH([0-9A-Z])', file_path)
     if match:
         return match.group(1)
     else:
