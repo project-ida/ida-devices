@@ -8,7 +8,7 @@ then services all read operations locally. Only append/update calls
 hit the API thereafter.
 
 Requirements:
-  - A service-account JSON key at GOOGLE_CREDS (default "credentials.json")
+  - A service-account JSON key at GOOGLE_CREDS (default "sheets_credentials.json")
   - A config file at SHEET_CONFIG_PATH (default "config/google_sheet_config.json")
     defining:
       * spreadsheet_id
@@ -53,7 +53,7 @@ class GoogleSheet:
         creds_file (str, optional): Path to the Google service account credentials JSON file.
         """
         config_file = config_file or os.getenv('SHEET_CONFIG_PATH', 'config/google_sheet_config.json')
-        creds_file = creds_file or os.getenv('GOOGLE_CREDS', 'credentials.json')
+        creds_file = creds_file or os.getenv('GOOGLE_CREDS', 'sheets_credentials.json')
 
         # Explicitly specify UTF-8 encoding for clarity and future-proofing
         try:

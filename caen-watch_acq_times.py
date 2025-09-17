@@ -22,8 +22,12 @@ from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 from pathlib import Path
 
-# Determine local host name (or from env var)
-COMPUTER_NAME = os.getenv("COMPUTER_NAME") or socket.gethostname()
+# Get computer name from environment variable or user input
+COMPUTER_NAME = os.getenv("COMPUTER_NAME")
+if not COMPUTER_NAME:
+    print("COMPUTER_NAME environment variable not set.")
+    print("You must run 'bash ida-devices/scripts/set-computer-name.sh' to set it.")
+    exit(1)
 
 # Ensure libs/ is on the path
 PROJECT_ROOT = Path(__file__).resolve().parent
@@ -449,7 +453,7 @@ def main() -> None:
     if not watch_folder:
         try:
             while True:
-                watch_folder = input("Enter the DAQ folder to monitor: ").strip()
+                watch_folder = input("Enter the DAQ folder to monitor (e.g. "caen-master-project-1"): ").strip()
                 if Path(watch_folder).is_dir():
                     break
                 logging.error(f"❌  '{watch_folder}' is not a valid directory. Please try again.")
