@@ -1,120 +1,109 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-
-import os
-import sys
 import time
-import re
+import os
 import logging
 import argparse
-from datetime import datetime, timedelta, timezone
-from typing import Optional, Tuple, List
-
+import re
 import numpy as np
 import pandas as pd
+from datetime import datetime, timedelta
+
+# watchdog
 from watchdog.observers import Observer
 from watchdog.events import PatternMatchingEventHandler
 
-# --- Import local creds; add parent so "ida_db" or creds can be found ---
+# Add the parent directory (../) to the Python path so ida_db & creds resolve as before
+import sys
 parent_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 if parent_dir not in sys.path:
     sys.path.append(parent_dir)
 
-# We will use psycopg2 directly so we can set per-row timestamps for History
-try:
-    import psycopg2
-    import psycopg2.extras
-except Exception:
-    print("ERROR: psycopg2 not installed. Run: pip install psycopg2-binary")
-    raise
+# ---------------- DB init (unchanged behavior) ----------------
 
-# ------------------------------ DB HELPERS -------------------------------
-
-class DB:
+def init_db():
     """
-    Minimal DB helper that supports:
-      - insert_spectrum_now(table, counts_array)
-      - insert_history_at(table, dt, value)
-    Uses the timezone set on the server; we pass explicit timestamp for history.
+    Initialize and return a PostgreSQL logger using your existing ida_db.pglogger.
+    This is exactly the connection path that worked for you previously.
     """
+    from ida_db import pglogger
+    import psql_credentials as creds
+    try:
+        db_cloud = pglogger(creds)
+        logging.info("Database connection initialized via ida_db.pglogger.")
+        return db_cloud
+    except Exception as e:
+        logging.error(f"Failed to initialize database connection: {e}")
+        return None
 
-    def __init__(self):
+def reconnect_db():
+    logging.warning("Attempting to reconnect to the database...")
+    return init_db()
+
+# -------- helper: get a psycopg cursor from the existing pglogger --------
+
+def _get_psycopg_cursor_from_pglogger(db_cloud):
+    """
+    Try to reuse the already-working connection that ida_db.pglogger uses, so we can
+    execute explicit-timestamp INSERTs for History without changing your setup.
+
+    Returns (conn, cursor) or (None, None) if we cannot get one.
+    """
+    conn = None
+    for attr in ("conn", "_conn", "connection"):
+        if hasattr(db_cloud, attr):
+            conn = getattr(db_cloud, attr)
+            break
+    if conn is None:
+        return None, None
+    try:
+        cur = conn.cursor()
+        return conn, cur
+    except Exception:
+        return None, None
+
+def _open_psycopg_fallback():
+    """
+    If the pglogger object doesn't expose a connection, fall back to opening a new
+    psycopg2 connection using the same credentials module you already have.
+    """
+    try:
+        import psycopg2  # uses the installed driver on your system
         import psql_credentials as creds
+
+        # Prefer DSN if present; otherwise build from fields commonly used in your env
         dsn = getattr(creds, "DSN", None)
         if not dsn:
-            # Build DSN from individual fields
-            host = getattr(creds, "host", None) or getattr(creds, "HOST", None)
-            port = getattr(creds, "port", None) or getattr(creds, "PORT", None)
-            dbname = getattr(creds, "dbname", None) or getattr(creds, "database", None) \
-                     or getattr(creds, "DBNAME", None) or getattr(creds, "DATABASE", None)
-            user = getattr(creds, "user", None) or getattr(creds, "USER", None)
-            password = getattr(creds, "password", None) or getattr(creds, "PASSWORD", None)
-
             parts = []
-            if host: parts.append(f"host={host}")
-            if port: parts.append(f"port={port}")
-            if dbname: parts.append(f"dbname={dbname}")
-            if user: parts.append(f"user={user}")
-            if password: parts.append(f"password={password}")
+            for k in ("host","HOST"): 
+                if hasattr(creds, k): parts.append(f"host={getattr(creds,k)}"); break
+            for k in ("port","PORT"): 
+                if hasattr(creds, k): parts.append(f"port={getattr(creds,k)}"); break
+            for k in ("dbname","database","DBNAME","DATABASE"):
+                if hasattr(creds, k): parts.append(f"dbname={getattr(creds,k)}"); break
+            for k in ("user","USER"):
+                if hasattr(creds, k): parts.append(f"user={getattr(creds,k)}"); break
+            for k in ("password","PASSWORD"):
+                if hasattr(creds, k): parts.append(f"password={getattr(creds,k)}"); break
+            if hasattr(creds, "sslmode"):
+                parts.append(f"sslmode={getattr(creds,'sslmode')}")
             dsn = " ".join(parts)
 
-        self._dsn = dsn
-        self._conn = None
-        self.connect()
+        conn = psycopg2.connect(dsn)
+        conn.autocommit = True
+        cur = conn.cursor()
+        logging.info("Opened fallback psycopg2 connection using psql_credentials.")
+        return conn, cur
+    except Exception as e:
+        logging.error(f"Could not open fallback psycopg2 connection: {e}")
+        return None, None
 
-    def connect(self):
-        if self._conn:
-            try:
-                self._conn.close()
-            except Exception:
-                pass
-        self._conn = psycopg2.connect(self._dsn)
-        self._conn.autocommit = True
+# -------------------- file utilities --------------------
 
-    def reconnect(self):
-        logging.warning("Reconnecting to PostgreSQL…")
-        time.sleep(1.0)
-        self.connect()
-
-    def insert_spectrum_now(self, table: str, counts: np.ndarray) -> bool:
-        """
-        Insert one row into <table> with time=NOW() and the numeric array.
-        Expects table schema: (time timestamp with time zone, channels double precision[])
-        """
-        sql = f"INSERT INTO {table} (time, channels) VALUES (NOW(), %s)"
-        try:
-            with self._conn.cursor() as cur:
-                cur.execute(sql, (counts.tolist(),))
-            return True
-        except Exception as e:
-            logging.error(f"Insert spectrum failed: {e}")
-            return False
-
-    def insert_history_at(self, table: str, dt: datetime, value: float) -> bool:
-        """
-        Insert one row into <table> at an explicit timestamp with a single-value array.
-        """
-        sql = f"INSERT INTO {table} (time, channels) VALUES (%s, %s)"
-        arr = [float(value)]
-        try:
-            with self._conn.cursor() as cur:
-                cur.execute(sql, (dt, arr))
-            return True
-        except Exception as e:
-            logging.error(f"Insert history failed: {e}")
-            return False
-
-
-# ---------------------------- FILE UTILITIES -----------------------------
-
-def wait_for_file_stable(path: str, polls: int = 5, interval: float = 0.2) -> bool:
-    """
-    Wait until file size stops changing across 'polls' checks.
-    """
+def _wait_for_file_stable(path, polls=5, interval=0.2):
+    """Wait until file size stops changing to avoid reading half-written files."""
     try:
         last = -1
         stable = 0
-        for _ in range(polls * 3):  # up to ~3*polls*interval seconds
+        for _ in range(polls * 5):
             sz = os.path.getsize(path)
             if sz == last:
                 stable += 1
@@ -124,192 +113,189 @@ def wait_for_file_stable(path: str, polls: int = 5, interval: float = 0.2) -> bo
                 stable = 0
                 last = sz
             time.sleep(interval)
-        return False
     except FileNotFoundError:
         return False
+    return False
 
+# -------------------- core processing --------------------
 
-def parse_channel_from_filename(path: str, kind: str) -> Optional[int]:
-    """
-    kind: 'History' or 'Spectrum'
-    Matches e.g. .../History0-1.csv -> 0, Spectrum3-xyz.csv -> 3
-    """
-    m = re.search(rf"{kind}(\d+)-", os.path.basename(path))
-    return int(m.group(1)) if m else None
-
-
-# --------------------------- PROCESSING LOGIC ----------------------------
-
-def process_history_file(path: str, table_prefix: str, db: DB) -> None:
-    """
-    File format: one entry per line: "<second>, <value>"
-    We take base = NOW() floored to minute (server-local notion),
-    and timestamp each entry at base + second.
-    """
-    ch = parse_channel_from_filename(path, "History")
-    if ch is None:
-        logging.warning(f"Could not parse channel from filename: {path}")
+def process_file(event, table_prefix, db_cloud, state):
+    if event.is_directory:
         return
-    table = f"{table_prefix}{ch}_history"
 
-    # Read quickly; tolerate both "s,v" and "s, v"
-    lines: List[str] = []
-    with open(path, "r", encoding="utf-8", errors="ignore") as f:
-        lines = [ln.strip() for ln in f if ln.strip()]
-
-    # Determine base = now floored to minute (local time of this machine).
-    # If you want DB-side time zone, you can also fetch server NOW(), but this is fine.
-    now_local = datetime.now()
-    base = now_local.replace(second=0, microsecond=0)
-
-    ok_count, bad_count = 0, 0
-    for ln in lines:
-        try:
-            # supports "12, 34" or "12,34"
-            s_str, v_str = [x.strip() for x in ln.split(",", 1)]
-            sec = int(s_str)
-            val = float(v_str)
-            # Clamp seconds into [0, 59] just in case
-            if sec < 0:
-                sec = 0
-            elif sec > 59:
-                sec = 59
-            dt = base + timedelta(seconds=sec)
-            if not db.insert_history_at(table, dt, val):
-                # One retry after reconnect
-                db.reconnect()
-                if not db.insert_history_at(table, dt, val):
-                    bad_count += 1
-                else:
-                    ok_count += 1
-            else:
-                ok_count += 1
-        except Exception as e:
-            logging.warning(f"Skipping malformed history line '{ln}': {e}")
-            bad_count += 1
-
-    logging.info(f"History→ {table}: inserted={ok_count}, skipped={bad_count}")
-
-
-def process_spectrum_file(path: str, table_prefix: str, db: DB) -> None:
-    """
-    File format: one entry per line: "<channel>, <count>"
-    We build a 1-D float array of counts and store with NOW() (DB-side).
-    """
-    ch = parse_channel_from_filename(path, "Spectrum")
-    if ch is None:
-        logging.warning(f"Could not parse channel from filename: {path}")
+    file_path = event.src_path
+    if not _wait_for_file_stable(file_path):
+        logging.warning(f"File never stabilized: {file_path}")
         return
-    table = f"{table_prefix}{ch}_spectrum"
 
-    counts: List[float] = []
-    with open(path, "r", encoding="utf-8", errors="ignore") as f:
-        for ln in f:
-            ln = ln.strip()
-            if not ln:
+    new_file = os.path.basename(file_path)
+    # simple de-dup guard
+    if new_file == state.get("last_filename"):
+        logging.info("Duplicate file event. Skipping.")
+        return
+    state["last_filename"] = new_file
+
+    logging.info(f"Processing: {file_path}")
+
+    if "History" in new_file:
+        process_history_file(file_path, table_prefix, db_cloud)
+    elif "Spectrum" in new_file:
+        process_spectrum_file(file_path, table_prefix, db_cloud)
+
+def process_history_file(file_path, table_prefix, db_cloud):
+    """
+    HISTORY: lines are 'second, value' — we take base time = NOW() floored to the minute
+    (on this machine), and insert one row per line at base + second.
+    """
+    channel_match = re.search(r"History(\d+)-", os.path.basename(file_path))
+    channel = int(channel_match.group(1)) if channel_match else None
+    table_name = f"{table_prefix}{channel}_history"
+
+    # Read as pairs
+    pairs = []
+    with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
+        for entry in f:
+            entry = entry.strip()
+            if not entry:
                 continue
             try:
-                # supports "12, 34" or "12,34"
-                ch_str, cnt_str = [x.strip() for x in ln.split(",", 1)]
-                # int(ch_str)  # channel index not used here
+                s_str, v_str = [x.strip() for x in entry.split(",", 1)]
+                sec = int(s_str)
+                val = float(v_str)
+                # Clamp seconds into 0..59 (change to rollover if you prefer)
+                sec = 0 if sec < 0 else (59 if sec > 59 else sec)
+                pairs.append((sec, val))
+            except Exception:
+                logging.warning(f"Skipping malformed history line: {entry}")
+
+    if not pairs:
+        logging.warning(f"No valid lines in history file: {file_path}")
+        return
+
+    # Base = now floored to minute (no timezone gymnastics needed)
+    base = datetime.now().replace(second=0, microsecond=0)
+
+    # Try to reuse the existing pglogger connection; else open a fallback
+    conn, cur = _get_psycopg_cursor_from_pglogger(db_cloud)
+    need_close = False
+    if cur is None:
+        conn, cur = _open_psycopg_fallback()
+        need_close = bool(cur)
+
+    if cur is None:
+        logging.error("No working DB cursor; cannot insert history rows.")
+        return
+
+    # Insert one row per line with explicit timestamp
+    sql = f"INSERT INTO {table_name} (time, channels) VALUES (%s, %s)"
+    ok, bad = 0, 0
+    for sec, val in pairs:
+        dt = base + timedelta(seconds=sec)
+        try:
+            cur.execute(sql, (dt, [float(val)]))
+            ok += 1
+        except Exception as e:
+            logging.warning(f"Failed to insert history row ({dt}, {val}): {e}")
+            bad += 1
+
+    if need_close:
+        try:
+            cur.close()
+            conn.close()
+        except Exception:
+            pass
+
+    logging.info(f"History→ {table_name}: inserted={ok}, skipped={bad}")
+
+def process_spectrum_file(file_path, table_prefix, db_cloud):
+    """
+    SPECTRUM: lines are 'channel, count' — build a 1-D float array of counts
+    and pass it to db_cloud.log() (which inserts NOW() on the DB side).
+    """
+    channel_match = re.search(r"Spectrum(\d+)-", os.path.basename(file_path))
+    channel = int(channel_match.group(1)) if channel_match else None
+    table_name = f"{table_prefix}{channel}_spectrum"
+
+    counts = []
+    with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                ch_str, cnt_str = [x.strip() for x in line.split(",", 1)]
                 counts.append(float(cnt_str))
             except Exception:
-                logging.warning(f"Skipping malformed spectrum line: {ln}")
+                logging.warning(f"Skipping malformed spectrum line: {line}")
 
     if not counts:
-        logging.warning(f"No usable spectrum data in {path}")
+        logging.warning(f"No usable spectrum data in: {file_path}")
         return
 
-    arr = np.asarray(counts, dtype=float)
-
-    if not db.insert_spectrum_now(table, arr):
-        db.reconnect()
-        if not db.insert_spectrum_now(table, arr):
-            logging.error(f"Spectrum insert still failing for {path}")
+    arr = np.asarray(counts, dtype=float)   # *** key fix: pass numeric array ***
+    success = db_cloud.log(table=table_name, channels=arr)
+    if not success:
+        logging.warning(f"Failed to log spectrum data from {file_path}; reconnecting and retrying.")
+        db_cloud = reconnect_db()
+        if db_cloud is None or not db_cloud.log(table=table_name, channels=arr):
+            logging.error(f"Spectrum insert still failing for {file_path}")
             return
 
-    logging.info(f"Spectrum→ {table}: bins={arr.size}")
+    logging.info(f"Spectrum→ {table_name}: bins={arr.size}")
 
+# -------------------- watcher scaffolding (unchanged UX) --------------------
 
-# ------------------------------ WATCHER ---------------------------------
+def on_created_factory(table_prefix, db_cloud, state):
+    def _inner(event):
+        process_file(event, table_prefix, db_cloud, state)
+    return _inner
 
-class Watcher:
-    def __init__(self, folder: str, table_prefix: str):
-        self.folder = folder
-        self.table_prefix = table_prefix
-        self.db = DB()
-        self.last_filename = None  # simple de-dupe
+def on_modified(event):
+    # Ignore to avoid re-processing partially written files
+    pass
 
-    def on_created(self, event):
-        if event.is_directory:
-            return
-        path = event.src_path
-        # de-dup by exact name (helps with double notifications on some FS)
-        fname = os.path.basename(path)
-        if fname == self.last_filename:
-            logging.info(f"Duplicate event skipped for {fname}")
-            return
+def start_observer(folder_path, table_prefix):
+    db_cloud = init_db()
+    if db_cloud is None:
+        logging.error("Could not initialize database connection. Exiting.")
+        sys.exit(1)
 
-        # Wait for file to finish writing
-        if not wait_for_file_stable(path):
-            logging.warning(f"File never stabilized: {path}")
-            return
+    logging.info(f"Started observer for path: {folder_path}")
 
-        self.last_filename = fname
-        try:
-            if "History" in fname:
-                process_history_file(path, self.table_prefix, self.db)
-            elif "Spectrum" in fname:
-                process_spectrum_file(path, self.table_prefix, self.db)
-            else:
-                logging.info(f"Ignoring non-matching file: {fname}")
-        except Exception as e:
-            logging.exception(f"Unhandled error processing {fname}: {e}")
+    state = {"last_filename": None}
+    observer = Observer()
+    event_handler = PatternMatchingEventHandler(patterns=["*.csv"], ignore_directories=True)
+    event_handler.on_created = on_created_factory(table_prefix, db_cloud, state)
+    event_handler.on_modified = on_modified
 
-    @staticmethod
-    def on_modified(event):
-        # Ignore to avoid double-processing while files are being written
-        return
+    observer.schedule(event_handler, folder_path, recursive=False)
+    observer.start()
 
-    def run(self):
-        patterns = ["*.csv"]
-        handler = PatternMatchingEventHandler(patterns=patterns, ignore_directories=True)
-        handler.on_created = self.on_created
-        handler.on_modified = self.on_modified
+    try:
+        while True:
+            time.sleep(1)
+    except KeyboardInterrupt:
+        logging.info("Stopping observer...")
+        observer.stop()
+    observer.join()
 
-        observer = Observer()
-        observer.schedule(handler, self.folder, recursive=False)
-        observer.start()
-        logging.info(f"Watching: {self.folder}")
+# -------------------- CLI --------------------
 
-        try:
-            while True:
-                time.sleep(1)
-        except KeyboardInterrupt:
-            logging.info("Stopping observer…")
-            observer.stop()
-        observer.join()
-
-
-# --------------------------------- MAIN ---------------------------------
-
-def main():
-    ap = argparse.ArgumentParser(description="Watch a folder and ingest History/Spectrum CSVs.")
-    ap.add_argument("--folder", required=True, help="Folder to watch for .csv files")
-    ap.add_argument("--table-prefix", required=True, help="Database table name prefix (e.g., 'neutrons_max')")
-    ap.add_argument("--log-file", default="pulse_counter.log")
-    ap.add_argument("--log-level", default="INFO", choices=["DEBUG","INFO","WARNING","ERROR"])
-    args = ap.parse_args()
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Pulse Counter File Watcher")
+    parser.add_argument('--table-prefix', required=True, help="Database table name prefix")
+    parser.add_argument('--folder', required=True, help="Folder path to watch for .csv files")
+    parser.add_argument("--log-file", default="pulse_counter.log")
+    parser.add_argument("--log-level", default="INFO", choices=["DEBUG","INFO","WARNING","ERROR"])
+    args = parser.parse_args()
 
     logging.basicConfig(
         level=getattr(logging, args.log_level.upper(), logging.INFO),
-        format="%(asctime)s %(levelname)s %(message)s",
-        handlers=[logging.StreamHandler(), logging.FileHandler(args.log_file, encoding="utf-8")]
+        format='%(asctime)s - %(levelname)s - %(message)s',
+        handlers=[
+            logging.FileHandler(args.log_file, encoding="utf-8"),
+            logging.StreamHandler()
+        ]
     )
 
-    watcher = Watcher(args.folder, args.table_prefix)
-    watcher.run()
-
-
-if __name__ == "__main__":
-    main()
+    start_observer(args.folder, args.table_prefix)
