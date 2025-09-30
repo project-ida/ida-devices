@@ -1,0 +1,27 @@
+{
+  "spreadsheet_id": "1O-jlIZhBrzKO-lwSM6uMs0TlYdRk_2khoCM9S3b9Mfg",
+  "sheet_name": "Sheet1",
+  "header_row": 1,
+  "columns": {
+    "id_header": "Experiment ID",
+    "description_header": "Description",
+    "digitizer_header": "Digitizer",
+    "digitizer_channel_number_header": "Digitizer channel number",
+    "daq_laptop_name_header": "DAQ laptop name",
+    "compas_config_file_header": "Compas configuration file (digitizer settings)",
+    "google_drive_data_folders_header": "Google drive data folder name(s)",
+    "detectors_header": "Detector(s) names and channel number(s)",
+    "power_supply_header": "Power supply",
+    "power_supply_channel_header": "Power suppy channel",
+    "bias_voltage_header": "Bias voltage",
+    "idle_total_counts_header": "Idle total counts",
+    "setup_header": "Setup",
+    "calibration_header": "Calibration",
+    "background1_header": "Background 1",
+    "experiment_header": "Experiment",
+    "background2_header": "Background 2",
+    "end_header": "End",
+    "psp_threshold_header": "psp threshold",
+    "background_analysis_notebook_header": "Background analysis notebook"
+  }
+}

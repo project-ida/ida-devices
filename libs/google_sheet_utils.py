@@ -1,0 +1,357 @@
+#!/usr/bin/env python3
+"""
+libs/google_sheet_utils.py
+
+Google Sheets utilities for run monitoring using gspread.
+This version does one initial fetch of the entire sheet into memory,
+then services all read operations locally. Only append/update calls
+hit the API thereafter.
+
+Requirements:
+  - A service-account JSON key at GOOGLE_CREDS (default "sheets_credentials.json")
+  - A config file at SHEET_CONFIG_PATH (default "config/google_sheet_config.json")
+    defining:
+      * spreadsheet_id
+      * sheet_name
+      * header_row
+      * columns.id_header
+      * columns.google_drive_data_folders_header
+      * columns.setup_header
+      * columns.end_header
+      * columns.daq_laptop_name_header
+"""
+
+import os
+import json
+import time
+from typing import List, Optional, Dict, Any
+from datetime import datetime
+import logging
+
+import gspread
+from google.oauth2.service_account import Credentials
+
+class GoogleSheet:
+    """
+    Utility class for interacting with a Google Sheet for DAQ run monitoring.
+    Handles authentication, reading, appending, and updating rows.
+
+    Note:
+        This class maintains an in-memory cache of sheet rows (`self.data_rows`)
+        that is only updated by this process. If the sheet is edited externally
+        (e.g., by another user or process), the cache may become stale and
+        inconsistencies may occur. For best results, avoid concurrent edits.
+    """
+    def __init__(self, config_file: str = None, creds_file: str = None):
+        """
+        Initialize the GoogleSheet object, loading config and authenticating.
+
+        Uses google-auth for secure authentication.
+
+        Parameters:
+        config_file (str, optional): Path to the sheet config JSON file.
+        creds_file (str, optional): Path to the Google service account credentials JSON file.
+        """
+        config_file = config_file or os.getenv('SHEET_CONFIG_PATH', 'config/google_sheet_config.json')
+        creds_file = creds_file or os.getenv('GOOGLE_CREDS', 'sheets_credentials.json')
+
+        # Explicitly specify UTF-8 encoding for clarity and future-proofing
+        try:
+            with open(config_file, 'r', encoding='utf-8') as cf:
+                cfg = json.load(cf)
+        except FileNotFoundError:
+            raise FileNotFoundError(
+                f"Config file '{config_file}' not found. Please ensure the path is correct."
+            )
+        except json.JSONDecodeError as e:
+            raise ValueError(
+                f"Config file '{config_file}' is not valid JSON: {e}"
+            )
+        except Exception as e:
+            raise RuntimeError(
+                f"An unexpected error occurred while reading config file '{config_file}': {e}"
+            )
+        # Authenticate using google-auth and fetch sheet using gspread
+        scopes = ['https://www.googleapis.com/auth/spreadsheets']
+        try:
+            creds = Credentials.from_service_account_file(creds_file, scopes=scopes)
+        except FileNotFoundError:
+            raise FileNotFoundError(f"Google credentials file not found: {creds_file}")
+        except Exception as e:
+            raise RuntimeError(f"Failed to load Google credentials from '{creds_file}': {e}")
+        gc = gspread.authorize(creds)
+
+        # Parse config columns and headers
+        try:
+            cols = cfg['columns']
+            self.id_header = cols['id_header']
+            self.run_header = cols['google_drive_data_folders_header']
+            self.setup_header = cols['setup_header']
+            self.end_header = cols['end_header']
+            self.daq_pc_header = cols['daq_laptop_name_header']
+            self.digitizer_header = cols['digitizer_header']
+            self.config_header = cols['compas_config_file_header']
+            self.power_supply_channel_header = cols['power_supply_channel_header']
+            self.bias_voltage_header = cols['bias_voltage_header']
+            self.spreadsheet_id = cfg['spreadsheet_id']
+            self.sheet_name = cfg['sheet_name']
+            self.header_row = cfg['header_row']
+        except KeyError as e:
+            raise KeyError(
+                f"Missing required key in config file '{config_file}': {e}"
+            )
+        except Exception as e:
+            raise RuntimeError(
+                f"An error occurred while parsing config file '{config_file}': {e}"
+            )
+
+        # Fetch worksheet and all rows
+        self.ws = gc.open_by_key(self.spreadsheet_id).worksheet(self.sheet_name)
+        all_rows = self.ws.get_all_values()
+
+        # Build header map and in-memory rows
+        self.headers = all_rows[self.header_row - 1]
+        # Google Sheets columns are 1-based (A=1, B=2, ...)
+        self.header_to_col = {name: idx + 1 for idx, name in enumerate(self.headers)}
+        self.COL_ID = self.header_to_col[self.id_header]  # 1-based index
+        self.COL_RUN_NAME = self.header_to_col[self.run_header]  # 1-based index
+        self.COL_SETUP = self.header_to_col[self.setup_header]  # 1-based index
+        self.COL_END = self.header_to_col[self.end_header]  # 1-based index
+        self.COL_DAQ_PC = self.header_to_col[self.daq_pc_header]  # 1-based index
+        self.COL_DIGITIZER = self.header_to_col[self.digitizer_header]  # 1-based index
+        self.COL_CONFIG = self.header_to_col[self.config_header]  # 1-based index
+        self.COL_POWER_SUPPLY_CHANNEL = self.header_to_col.get(self.power_supply_channel_header)  # 1-based index
+        self.COL_BIAS_VOLTAGE = self.header_to_col.get(self.bias_voltage_header)  # 1-based index
+        self.data_rows = all_rows[self.header_row:]
+
+    def _retry_api_call(self, fn, *args, retries: int = 3, delay: float = 1.0, **kwargs):
+        """
+        Retry a Google Sheets API call up to 'retries' times with exponential backoff.
+        Logs every exception encountered during retries for better debugging.
+
+        Parameters:
+        fn: The function to call.
+        *args: Positional arguments for the function.
+        retries (int): Number of retry attempts.
+        delay (float): Initial delay between retries in seconds.
+        **kwargs: Keyword arguments for the function.
+
+        Returns:
+        The result of the function call if successful.
+
+        Raises:
+        Exception: The last exception encountered if all retries fail.
+        """
+        last_exc = None
+        for attempt in range(1, retries + 1):
+            try:
+                return fn(*args, **kwargs)
+            except Exception as e:
+                logging.warning(
+                    f"API call failed on attempt {attempt}/{retries}: {e}"
+                )
+                last_exc = e
+                time.sleep(delay)
+                delay *= 2  # Exponential backoff
+        logging.error(f"API call failed after {retries} attempts.")
+        raise last_exc
+
+    def refresh(self) -> None:
+        """
+        Refresh the in-memory cache of sheet rows from the Google Sheet.
+
+        This method should be called to ensure the cache reflects the latest
+        state of the sheet, especially if external edits may have occurred.
+        """
+        all_rows = self.ws.get_all_values()
+        self.headers = all_rows[self.header_row - 1]
+        self.header_to_col = {name: idx + 1 for idx, name in enumerate(self.headers)}
+        self.data_rows = all_rows[self.header_row:]
+
+    def find_run_row(self, run_name: str, refresh: bool = True) -> Optional[int]:
+        """
+        Find the row index for a given run name.
+
+        Parameters:
+        run_name (str): The run name to search for.
+        refresh (bool): Whether to refresh the cache before searching.
+
+        Returns:
+        Optional[int]: The row index if found, else None.
+        """
+        if refresh:
+            self.refresh()
+        for sheet_row, row in enumerate(self.data_rows, start=self.header_row + 1):
+            if (row[self.COL_RUN_NAME - 1].strip() == run_name
+                    and row[self.COL_ID - 1].strip()):
+                return sheet_row
+        return None
+
+    def append_run(self, run_name: str, setup_dt: datetime, end_dt: Optional[datetime] = None, refresh: bool = True) -> None:
+        """
+        Append a new run to the sheet with the given setup and end times.
+
+        Parameters:
+        run_name (str): The run name.
+        setup_dt (datetime): The setup/start time.
+        end_dt (Optional[datetime]): The end time, if available.
+        refresh (bool): Whether to refresh the cache before appending.
+        """
+        if refresh:
+            self.refresh()
+        next_id = self._get_next_id()
+        new_row = self._build_new_row(run_name, setup_dt, end_dt, next_id)
+        self._retry_api_call(self.ws.append_row, new_row, value_input_option='RAW')
+        self.data_rows.append(new_row)
+
+    def _get_next_id(self) -> int:
+        """
+        Get the next available integer ID for a new run.
+        """
+        existing_ids = [
+            int(r[self.COL_ID - 1]) for r in self.data_rows
+            if r[self.COL_ID - 1].isdigit()
+        ]
+        return max(existing_ids) + 1 if existing_ids else 1
+
+    def _build_new_row(self, run_name: str, setup_dt: datetime, end_dt: Optional[datetime], next_id: int) -> List[str]:
+        """
+        Build a new row for appending to the sheet.
+        """
+        new_row = [''] * len(self.headers)
+        new_row[self.COL_ID - 1] = str(next_id)
+        new_row[self.COL_RUN_NAME - 1] = run_name
+        if setup_dt:
+            new_row[self.COL_SETUP - 1] = setup_dt.strftime('%Y-%m-%d %H:%M:%S')
+        if end_dt:
+            new_row[self.COL_END - 1] = end_dt.strftime('%Y-%m-%d %H:%M:%S')
+        return new_row
+
+
+    def update_run_row(self, run_name: str, values: Dict[int, Any], refresh: bool = True) -> None:
+        """
+        Atomically update multiple fields for a run in the sheet.
+
+        Parameters:
+        run_name (str): The run name to update.
+        values (Dict[int, Any]): Mapping of column indices to new values.
+        refresh (bool): Whether to refresh the cache before updating.
+        """
+        if refresh:
+            self.refresh()
+        row_idx = self.find_run_row(run_name, refresh=False)
+        if row_idx is None:
+            return
+        mem_idx = row_idx - self.header_row - 1
+        row = self.data_rows[mem_idx]
+        updated = self._update_row_in_memory(row, values)
+        if updated:
+            self._push_row_update(row_idx, row)
+
+    def _update_row_in_memory(self, row: List[str], values: Dict[int, Any]) -> bool:
+        """
+        Update the in-memory row with the provided values.
+
+        Parameters:
+        row (List[str]): The row to update.
+        values (Dict[int, Any]): Mapping of column indices to new values.
+
+        Returns:
+        bool: True if any value was updated, False otherwise.
+        """
+        updated = False
+        for col_idx, value in values.items():
+            if value is None:
+                continue
+            if isinstance(value, datetime):
+                value = value.strftime('%Y-%m-%d %H:%M:%S')
+            elif not isinstance(value, str):
+                value = str(value)
+            if not row[col_idx - 1].strip():
+                row[col_idx - 1] = value
+                updated = True
+        return updated
+
+    @staticmethod
+    def col_idx_to_letter(idx: int) -> str:
+        """
+        Convert a 1-based column index to Excel-style column letters.
+
+        Parameters:
+        idx (int): 1-based column index (e.g., 1 -> 'A', 27 -> 'AA')
+
+        Returns:
+        str: Corresponding column letters.
+        """
+        letters = ""
+        while idx > 0:
+            idx, remainder = divmod(idx - 1, 26)
+            letters = chr(65 + remainder) + letters
+        return letters
+
+    def _push_row_update(self, row_idx: int, row: List[str]) -> None:
+        """
+        Push the updated row to the Google Sheet.
+
+        Parameters:
+        row_idx (int): The row index in the sheet.
+        row (List[str]): The updated row data.
+        """
+        end_col_letter = self.col_idx_to_letter(len(row))
+        self._retry_api_call(
+            self.ws.update,
+            f"A{row_idx}:{end_col_letter}{row_idx}",
+            [row]
+        )
+    
+    def insert_power_supply_rows(
+        self,
+        run_name: str,
+        channels: List[int],
+        voltages: List[float]
+    ) -> None:
+        """
+        Insert power supply channel and voltage info as new rows directly below the run entry.
+
+        Each channel/voltage pair is written in its own row, in the respective columns.
+        If power supply rows already exist, insert new rows between the run row and the next run entry.
+
+        Parameters:
+        run_name (str): Name of the run.
+        channels (List[int]): List of channel numbers.
+        voltages (List[float]): List of voltages for each channel.
+
+        Edge Cases:
+        - If columns are missing, logs a warning and skips update.
+        - If no run row is found, logs a warning and skips update.
+        """
+        self.refresh()
+        run_row_idx = self.find_run_row(run_name, refresh=False)
+        if run_row_idx is None:
+            logging.warning(f"Run '{run_name}' not found in sheet; cannot insert power supply rows.")
+            return
+
+        col_channel = self.COL_POWER_SUPPLY_CHANNEL
+        col_voltage = self.COL_BIAS_VOLTAGE
+        if col_channel is None or col_voltage is None:
+            logging.warning("Power supply columns not found in sheet headers.")
+            return
+
+        new_rows = []
+        for ch, v in zip(channels, voltages):
+            row = [''] * len(self.headers)
+            row[col_channel - 1] = str(ch)
+            row[col_voltage - 1] = f"{v:.2f}"
+            new_rows.append(row)
+
+        insert_idx = run_row_idx + 1
+        for i, r in enumerate(self.data_rows[insert_idx - self.header_row - 1:], start=insert_idx):
+            if r[self.COL_ID - 1].strip():
+                break
+            insert_idx += 1
+
+        for offset, row in enumerate(new_rows):
+            self._retry_api_call(self.ws.insert_row, row, index=insert_idx + offset)
+            self.data_rows.insert(insert_idx - self.header_row - 1 + offset, row)
+
+        logging.info(f"Inserted {len(new_rows)} power supply rows below run '{run_name}'.")
