@@ -1,6 +1,7 @@
 import subprocess
 import socket
 import time
+import platform
 
 def internet_available(timeout=2):
     """
@@ -22,12 +23,27 @@ def internet_available(timeout=2):
         return False
 
 def reset_wifi():
-    """Resets Wi-Fi using NetworkManager's nmcli."""
+    """Reset Wi-Fi adapter in a cross-platform way."""
     print("Resetting Wi-Fi...")
+
     try:
-        subprocess.run(["nmcli", "radio", "wifi", "off"], check=True)
-        time.sleep(2)
-        subprocess.run(["nmcli", "radio", "wifi", "on"], check=True)
-        time.sleep(10)  # Give time for reconnect
+        if platform.system() == "Linux":
+            # Ubuntu / Debian with NetworkManager
+            subprocess.run(["nmcli", "radio", "wifi", "off"], check=True)
+            time.sleep(2)
+            subprocess.run(["nmcli", "radio", "wifi", "on"], check=True)
+        
+        elif platform.system() == "Windows":
+            # Disable & enable Wi-Fi adapter via netsh
+            adapter = "Wi-Fi 2"  # Run "netsh interface show interface" to find the correct name
+            subprocess.run(["netsh", "interface", "set", "interface", adapter, "admin=disable"], check=True)
+            time.sleep(2)
+            subprocess.run(["netsh", "interface", "set", "interface", adapter, "admin=enable"], check=True)
+        
+        else:
+            print("reset_wifi not implemented for this OS")
+        
+        time.sleep(10)  # Wait for reconnection
+    
     except subprocess.CalledProcessError as e:
         print(f"Error resetting Wi-Fi: {e}")
