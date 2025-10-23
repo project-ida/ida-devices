@@ -35,7 +35,7 @@ while True:
     print(f"[{current_time}] Running Rclone copy from {source_folder} to {destination_folder}...")
 
     # Run the Rclone command and capture the output
-    rclone_command = f"rclone copy -v --progress {source_folder} {destination_folder} --exclude '*.root'"
+    rclone_command = f'rclone copy -v --progress "{source_folder}" "{destination_folder}" --exclude "*.root"'
     try:
         result = subprocess.run(rclone_command, shell=True, capture_output=False, text=True)
         if result.returncode != 0:
