@@ -30,7 +30,7 @@ def send_heartbeat():
         response = requests.get(f"https://hc-ping.com/{UUID}", timeout=10)
         response.raise_for_status()  # Raise an exception for 4xx/5xx errors
 
-        if response.text.strip() == "OK":
+        if response.text.strip().startswith("OK"):
             return True
         else:
             print(f"[{datetime.now()}] Heartbeat send failed: Unexpected response: {repr(response.text)}")
@@ -39,4 +39,3 @@ def send_heartbeat():
     except requests.RequestException as e:
         print(f"[{datetime.now()}] Heartbeat send failed due to network error: {e}")
         return False
-

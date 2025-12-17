@@ -3,6 +3,21 @@ import os
 import sys
 from datetime import datetime
 
+def _configure_stdio():
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(errors="backslashreplace")
+        except Exception:
+            pass
+
+
+def _safe_text(text):
+    value = str(text)
+    return value.encode("utf-8", "backslashreplace").decode("utf-8")
+
+
+_configure_stdio()
+
 # Get the directory of the calling script
 caller_dir = os.path.dirname(os.path.abspath(sys.argv[0]))
 
@@ -38,9 +53,13 @@ def send_telegram_alert(message, bot_token=None, chat_id=None):
     
     # Check if credentials are available
     if not bot_token or not chat_id:
-        print(f"[{datetime.now()}] Telegram alert failed: Missing TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID in {caller_dir}/telegram_credentials.py.")
+        print(
+            f"[{datetime.now()}] Telegram alert failed: Missing TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID in {caller_dir}/telegram_credentials.py."
+        )
         return False
-    
+
+    message = _safe_text(message)
+	    
     # Telegram API endpoint
     url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
     

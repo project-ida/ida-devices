@@ -14,6 +14,16 @@ from libs.telegram_notifier import send_telegram_alert
 from libs.network import internet_available, reset_wifi
 from libs.heartbeat import send_heartbeat
 
+def _configure_stdio():
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(errors="backslashreplace")
+        except Exception:
+            pass
+
+
+_configure_stdio()
+
 # Add the parent directory (../) to the Python path
 parent_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 sys.path.append(parent_dir)
