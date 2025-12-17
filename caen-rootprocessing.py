@@ -177,7 +177,8 @@ def process_root_file(file_path, table_prefix):
     
     try:
         print("----------START-------------")
-        
+        print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Processing {os.path.basename(file_path)}")
+
         # NOTE: now returns a 3rd value: acquisition_start_mtime_ns
         acquisition_start_datetime, acquisition_start_timestamp, acquisition_start_mtime_ns = estimate_acquisition_start(file_path)
         print(f"--> acquisition_start_datetime: {acquisition_start_datetime}")
