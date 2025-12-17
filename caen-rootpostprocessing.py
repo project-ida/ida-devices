@@ -32,7 +32,7 @@
 #   - Ensure Google Drive folders are marked "Available Offline" if used.
 #   - Database tables must exist with schema:
 #     - Event tables: time (timestamp(6) for microsecond precision), channels (double precision[]), ps (bigint).
-#     - root_files: time (varchar), computer (varchar), daq_folder (varchar), dir (varchar), file (varchar).
+#     - root_files: time (varchar), computer (varchar), daq_folder (varchar), dir (varchar), file (varchar), device (varchar).
 
 import argparse
 import os
@@ -112,13 +112,13 @@ def insert_many_timestamps_to_db(conn, table_name, rows, batch_size=1000):
     conn.commit()
 
 # Function to insert root file metadata into the database
-def insert_root_file_to_db(conn, time_value, computer, daq_folder, rel_dir, file):
+def insert_root_file_to_db(conn, time_value, computer, daq_folder, rel_dir, file, device):
     with conn.cursor() as cur:
         query = f"""
-            INSERT INTO root_files (time, computer, daq_folder, dir, file)
-            VALUES (%s, %s, %s, %s, %s)
+            INSERT INTO root_files (time, computer, daq_folder, dir, file, device)
+            VALUES (%s, %s, %s, %s, %s, %s)
         """
-        cur.execute(query, (time_value, computer, daq_folder, rel_dir, file))
+        cur.execute(query, (time_value, computer, daq_folder, rel_dir, file, device))
     conn.commit()
 
 
@@ -492,7 +492,7 @@ def main():
                         # Join remaining components for rel_dir
                         rel_dir = "/".join(dir_components)
                         daq_folder = os.path.basename(os.path.dirname(os.path.dirname(new_file_path)))
-                        insert_root_file_to_db(conn, end_time_str, computer_name, daq_folder, rel_dir, filename)
+                        insert_root_file_to_db(conn, end_time_str, computer_name, daq_folder, rel_dir, filename, table_prefix)
                         print(f"Inserted root file metadata into the database")
 
                         # Update DataFrame with new file path (or original if not renamed)

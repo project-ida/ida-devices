@@ -99,13 +99,13 @@ def insert_many_timestamps_to_db(conn, table_name, rows, batch_size=1000):
     conn.commit()
 
 # Function to insert event timestamps with picosecond precision
-def insert_root_file_to_db(conn, time_value, computer, daq_folder, rel_dir, file):
+def insert_root_file_to_db(conn, time_value, computer, daq_folder, rel_dir, file, device):
     with conn.cursor() as cur:
         query = f"""
-            INSERT INTO root_files (time, computer, daq_folder, dir, file)
-            VALUES (%s, %s, %s, %s, %s)
+            INSERT INTO root_files (time, computer, daq_folder, dir, file, device)
+            VALUES (%s, %s, %s, %s, %s, %s)
         """
-        cur.execute(query, (time_value, computer, daq_folder, rel_dir, file))
+        cur.execute(query, (time_value, computer, daq_folder, rel_dir, file, device))
     conn.commit()
 
 # Function to estimate the acquisition start time from settings.xml (preferred) or settings.txt (fallback)
@@ -286,7 +286,7 @@ def handle_root_file(file_path, table_prefix):
                 dir_components = directory.split(os.sep) # ['', 'home', 'cf', 'caen', 'daq', 'test', 'RAW']
                 rel_dir = "/".join(dir_components[3:])
                 daq_folder = os.path.basename(os.path.dirname(os.path.dirname(new_file_path))) # test
-                insert_root_file_to_db(conn, end_time_str, computer_name, daq_folder, rel_dir, filename)
+                insert_root_file_to_db(conn, end_time_str, computer_name, daq_folder, rel_dir, filename, table_prefix)
                 print(f"Inserted root file meta data into the database")
             finally:
                 conn.close()
