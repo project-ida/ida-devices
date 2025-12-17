@@ -490,7 +490,7 @@ def main():
                             computer_idx = dir_components.index(computer_name)
                             dir_components = dir_components[computer_idx + 1:]
                         # Join remaining components for rel_dir
-                        rel_dir = os.path.join(*dir_components)
+                        rel_dir = "/".join(dir_components)
                         daq_folder = os.path.basename(os.path.dirname(os.path.dirname(new_file_path)))
                         insert_root_file_to_db(conn, end_time_str, computer_name, daq_folder, rel_dir, filename)
                         print(f"Inserted root file metadata into the database")
