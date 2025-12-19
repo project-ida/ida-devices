@@ -1,4 +1,5 @@
 import os
+import argparse
 import sys
 import re
 import numpy as np
@@ -297,32 +298,61 @@ def handle_root_file(file_path, table_prefix):
 
 
 
-# Monitor folder for modified ROOT files
-class ModifiedFileHandler(FileSystemEventHandler):
-    def on_modified(self, event):
-        if not event.is_directory:
-            handle_root_file(event.src_path, table_prefix)
-
-    def on_moved(self, event):
-        if not event.is_directory:
-            handle_root_file(event.dest_path, table_prefix)
-
 # Dictionary to track processed files
 processed_files = {}
 
-if __name__ == "__main__":
-    # Prompt for folder path and table prefix
-    data_folder = input("Enter the folder path containing ROOT files: ").strip()
+def _parse_args():
+    parser = argparse.ArgumentParser(description="Monitor a folder for ROOT files and insert their events into Postgres.")
+    parser.add_argument(
+        "data_folder",
+        nargs="?",
+        help="Folder path containing ROOT files. If omitted, you'll be prompted.",
+    )
+    parser.add_argument(
+        "table_prefix",
+        nargs="?",
+        help="Table prefix for database tables (e.g., caen8ch). If omitted, you'll be prompted.",
+    )
+    return parser.parse_args()
+
+
+# Monitor folder for modified ROOT files
+class ModifiedFileHandler(FileSystemEventHandler):
+    def __init__(self, table_prefix):
+        super().__init__()
+        self.table_prefix = table_prefix
+
+    def on_modified(self, event):
+        if not event.is_directory:
+            handle_root_file(event.src_path, self.table_prefix)
+
+    def on_moved(self, event):
+        if not event.is_directory:
+            handle_root_file(event.dest_path, self.table_prefix)
+
+
+def main():
+    args = _parse_args()
+
+    if args.data_folder:
+        data_folder = args.data_folder.strip()
+    else:
+        data_folder = input("Enter the folder path containing ROOT files: ").strip()
+
     if not os.path.isdir(data_folder):
         print(f"Error: {data_folder} is not a valid directory")
-        sys.exit(1)
-    
-    table_prefix = input("Enter the table prefix for database tables (e.g., caen8ch): ").strip()
+        raise SystemExit(1)
+
+    if args.table_prefix:
+        table_prefix = args.table_prefix.strip()
+    else:
+        table_prefix = input("Enter the table prefix for database tables (e.g., caen8ch): ").strip()
+
     if not table_prefix:
         print("Error: Table prefix cannot be empty")
-        sys.exit(1)
+        raise SystemExit(1)
 
-    event_handler = ModifiedFileHandler()
+    event_handler = ModifiedFileHandler(table_prefix)
     observer = Observer()
     observer.schedule(event_handler, path=data_folder, recursive=True)
 
@@ -335,3 +365,7 @@ if __name__ == "__main__":
     except KeyboardInterrupt:
         observer.stop()
     observer.join()
+
+
+if __name__ == "__main__":
+    main()
