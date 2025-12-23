@@ -10,3 +10,6 @@ requests
 psycopg2
 PyQt5
 uproot
+gspread
+google-auth
+CAENpy
