@@ -58,7 +58,7 @@ def main():
     last_bit = os.path.basename(os.path.normpath(source_folder))
 
     # Construct the destination folder path
-    destination_folder = f"googledrive:Computers/{computer_name}/{last_bit}"
+    destination_folder = f"synology:backups/Computers/{computer_name}/{last_bit}"
 
     while True:
         # Print the current time in a human-readable format
@@ -71,14 +71,14 @@ def main():
             result = subprocess.run(rclone_command, shell=True, capture_output=False, text=True)
             if result.returncode != 0:
                 print(
-                    f"[{current_time}] Rclone copy failed. Please ensure the 'googledrive' Rclone config is set up correctly."
+                    f"[{current_time}] Rclone copy failed. Please ensure the 'synology' Rclone config is set up correctly."
                 )
                 print(f"Error output: {result.stderr}")
             else:
                 print(f"[{current_time}] Rclone copy completed. Waiting {check_interval} seconds before next run...\n")
         except Exception as e:
             print(
-                f"[{current_time}] Rclone copy failed. Please ensure the 'googledrive' Rclone config is set up correctly."
+                f"[{current_time}] Rclone copy failed. Please ensure the 'synology' Rclone config is set up correctly."
             )
             print(f"Exception: {str(e)}")
 
