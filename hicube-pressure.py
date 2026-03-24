@@ -120,7 +120,8 @@ async def monitor_pressure(table_name):
 
                 while True:
                     data_value = await node.read_data_value()
-                    pressure = float(data_value.Value.Value)
+                    raw_pressure = float(data_value.Value.Value)
+                    pressure = float(f"{raw_pressure:.3g}")
                     ts = choose_timestamp(data_value)
 
                     logging.info(f"{format_timestamp(ts)} pressure={pressure:.3g}")
