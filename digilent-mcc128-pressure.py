@@ -118,7 +118,6 @@ def main():
         start_acquisition(hat, channel_mask, 0, scan_rate, options)
         logging.info("DAQ acquisition started. Press Ctrl-C to stop.")
         read_and_display_data(hat, num_channels, csv_handle, db_cloud, table_name, resistor_value, pressure_lowest, pressure_highest, voltage_range=voltage_range)
-)
     except (HatError, ValueError) as err:
         logging.error(f"Hardware error: {err}")
     finally:
