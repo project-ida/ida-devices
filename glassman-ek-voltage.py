@@ -2,16 +2,32 @@
 # -*- coding: utf-8 -*-
 
 """
-Power supply serial logger.
+Glassman EK high-voltage power-supply logger.
 
-This replaces the MCC128 pressure-specific acquisition code with serial polling
-of the high-voltage power supply, while keeping the same general pattern:
+This version keeps the pressure-logger style of passing run-specific settings
+from the command line:
 
-  - command-line table name
-  - CSV logging
-  - database connection through ida_db.pglogger + psql_credentials
-  - reconnect attempts if database logging fails
-  - Ctrl-C cleanup
+  - --table       database table to log to
+  - --port        serial COM port, e.g. COM3
+  - --poll-delay  delay after each successful poll, in seconds
+
+It also:
+
+  - connects to database through ida_db.pglogger + psql_credentials
+  - writes a local CSV backup
+  - polls the Glassman supply over RS-232 serial
+  - logs voltage/current/status to the database table named by --table
+  - reconnects to database automatically after DB logging errors
+  - retries after serial/read errors
+  - always asks for the version string at startup
+  - exits cleanly on Ctrl-C
+
+Expected hardware setup from testing:
+  - 9600 baud, 8N1
+  - null-modem / TX-RX crossover adapter
+  - working commands:
+      version: 01 56 35 36 0d
+      query:   01 51 35 31 0d
 
 Database channel order:
   0: voltage_kv
@@ -29,7 +45,6 @@ import argparse
 import csv
 import logging
 import os
-import re
 import sys
 import time
 from collections import namedtuple
@@ -37,11 +52,25 @@ from datetime import datetime
 
 import numpy as np
 import serial
-import serial.tools.list_ports
 
+
+# ---------------------------------------------------------------------------
+# Hardwired instrument settings
+# ---------------------------------------------------------------------------
+
+BAUDRATE = 9600
+SERIAL_TIMEOUT_SEC = 1.0
+
+# Full-scale ratings are needed to convert the supply's 10-bit hex counts
+# into engineering units. Change these constants if you use a different supply.
+V_MAX_KV = 10.0
+I_MAX_MA = 60.0
 
 QUERY_CMD = b"\x01Q51\r"      # SOH Q checksum CR
 VERSION_CMD = b"\x01V56\r"    # SOH V checksum CR
+
+# Standard retry delay after a serial/read/database error.
+ERROR_SLEEP_SEC = 1.0
 
 
 # Add the parent directory (../) to the Python path, matching the old DAQ script.
@@ -55,7 +84,7 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
     handlers=[
-        logging.FileHandler("power_supply_log.log"),
+        logging.FileHandler("glassman_ek_voltage_log.log"),
         logging.StreamHandler()
     ]
 )
@@ -101,7 +130,7 @@ def setup_csv():
 
     start_time = datetime.now()
     timestamp = start_time.strftime("%Y%m%d_%H%M%S")
-    filename = f"{timestamp}_power_supply.csv"
+    filename = f"{timestamp}_glassman_ek_voltage.csv"
 
     csv_file = open(filename, "w", newline="")
     csv_writer = csv.writer(csv_file)
@@ -124,20 +153,6 @@ def setup_csv():
     return CsvHandle(writer=csv_writer, file=csv_file)
 
 
-def list_ports():
-    """
-    Print available serial ports.
-    """
-    ports = list(serial.tools.list_ports.comports())
-
-    if not ports:
-        print("No serial ports found.")
-        return
-
-    for p in ports:
-        print(f"{p.device}: {p.description} [{p.hwid}]")
-
-
 def checksum_ascii(data):
     """
     Calculate the two-character ASCII hex checksum used by the supply.
@@ -152,7 +167,7 @@ def read_response(ser, max_bytes=64):
     return ser.read_until(b"\r", size=max_bytes)
 
 
-def parse_query_response(resp, v_max_kv, i_max_ma):
+def parse_query_response(resp):
     """
     Parse a query response packet from the supply.
 
@@ -183,8 +198,8 @@ def parse_query_response(resp, v_max_kv, i_max_ma):
     v_counts = int(resp[1:4].decode("ascii"), 16)
     i_counts = int(resp[4:7].decode("ascii"), 16)
 
-    voltage_kv = v_counts / 0x3FF * v_max_kv
-    current_ma = i_counts / 0x3FF * i_max_ma
+    voltage_kv = v_counts / 0x3FF * V_MAX_KV
+    current_ma = i_counts / 0x3FF * I_MAX_MA
 
     # This status-byte mapping follows the earlier working script.
     # It should be verified against your supply's manual / command set.
@@ -209,17 +224,17 @@ def parse_query_response(resp, v_max_kv, i_max_ma):
     }
 
 
-def open_serial(port, baudrate, timeout):
+def open_serial(port):
     """
     Open the serial connection to the supply.
     """
     ser = serial.Serial(
         port=port,
-        baudrate=baudrate,
+        baudrate=BAUDRATE,
         bytesize=8,
         parity="N",
         stopbits=1,
-        timeout=timeout,
+        timeout=SERIAL_TIMEOUT_SEC,
         xonxoff=False,
         rtscts=False,
         dsrdtr=False,
@@ -246,7 +261,7 @@ def query_version(ser):
     return read_response(ser, max_bytes=16)
 
 
-def query_supply(ser, v_max_kv, i_max_ma):
+def query_supply(ser):
     """
     Query the supply once and return parsed data.
     """
@@ -256,7 +271,7 @@ def query_supply(ser, v_max_kv, i_max_ma):
     ser.flush()
 
     resp = read_response(ser, max_bytes=16)
-    return parse_query_response(resp, v_max_kv=v_max_kv, i_max_ma=i_max_ma)
+    return parse_query_response(resp)
 
 
 def log_to_database(db_cloud, table_name, data):
@@ -299,32 +314,13 @@ def write_csv_row(csv_handle, timestamp, data):
     csv_handle.file.flush()
 
 
-def validate_table_name(table_name):
-    """
-    Basic safety check for table names.
-
-    Allows:
-      table_name
-      schema.table_name
-
-    with letters, digits, and underscores. This avoids accidentally passing
-    shell-like or SQL-like strings as a table name.
-    """
-    pattern = r"^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)?$"
-    if not re.match(pattern, table_name):
-        raise ValueError(
-            f"Unsafe table name: {table_name!r}. "
-            "Use only letters, digits, underscores, and optionally one schema dot."
-        )
-
-
-def logging_loop(ser, csv_handle, db_cloud, table_name, args):
+def logging_loop(ser, csv_handle, db_cloud, table_name, poll_delay):
     """
     Poll the supply, print readings, write CSV rows, and push data to DB.
     """
     while True:
         try:
-            data = query_supply(ser, v_max_kv=args.vmax_kv, i_max_ma=args.imax_ma)
+            data = query_supply(ser)
             timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
             print(
@@ -336,28 +332,24 @@ def logging_loop(ser, csv_handle, db_cloud, table_name, args):
                 f"FAULT={bool(data['fault_flag'])}"
             )
 
-            if args.raw_debug:
-                print(f"  raw={data['raw']!r} hex={data['raw_hex']}")
+            write_csv_row(csv_handle, timestamp, data)
 
-            if csv_handle is not None:
-                write_csv_row(csv_handle, timestamp, data)
-
-            if not args.no_db:
-                if db_cloud:
-                    try:
-                        success = log_to_database(db_cloud, table_name, data)
-                        if not success:
-                            logging.warning(
-                                f"Failed to log data to table {table_name!r}."
-                            )
-                            db_cloud = reconnect_db()
-                    except Exception as e:
-                        logging.error(f"Database logging failed: {e}")
+            if db_cloud:
+                try:
+                    success = log_to_database(db_cloud, table_name, data)
+                    if not success:
+                        logging.warning(
+                            f"Failed to log data to table {table_name!r}."
+                        )
                         db_cloud = reconnect_db()
-                else:
+                except Exception as e:
+                    logging.error(f"Database logging failed: {e}")
                     db_cloud = reconnect_db()
+            else:
+                db_cloud = reconnect_db()
 
-            time.sleep(args.interval)
+            if poll_delay > 0:
+                time.sleep(poll_delay)
 
         except KeyboardInterrupt:
             logging.info("Keyboard interrupt received. Stopping serial logger.")
@@ -365,133 +357,64 @@ def logging_loop(ser, csv_handle, db_cloud, table_name, args):
 
         except (RuntimeError, serial.SerialException, serial.SerialTimeoutException) as e:
             logging.error(f"Read/serial error: {e}")
-            time.sleep(args.error_sleep)
+            time.sleep(ERROR_SLEEP_SEC)
 
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Serial power-supply logger with CSV and PostgreSQL database logging."
+        description="Glassman EK serial power-supply logger with CSV and PostgreSQL database logging."
     )
 
     parser.add_argument(
         "--table",
-        required=False,
-        help="Name of the database table to log data to. Required unless --no-db is used."
+        required=True,
+        help="Name of the database table to log data to."
     )
     parser.add_argument(
         "--port",
-        default="COM3",
+        required=True,
         help="Serial port for the power supply, e.g. COM3 on Windows or /dev/ttyUSB0 on Linux."
     )
     parser.add_argument(
-        "--baudrate",
-        type=int,
-        default=9600,
-        help="Serial baud rate. The working value from testing was 9600."
-    )
-    parser.add_argument(
-        "--vmax-kv",
+        "--poll-delay",
         type=float,
-        default=10.0,
-        help="Supply full-scale voltage in kV."
-    )
-    parser.add_argument(
-        "--imax-ma",
-        type=float,
-        default=60.0,
-        help="Supply full-scale current in mA."
-    )
-    parser.add_argument(
-        "--interval",
-        type=float,
-        default=1.0,
-        help="Polling interval in seconds."
-    )
-    parser.add_argument(
-        "--timeout",
-        type=float,
-        default=1.0,
-        help="Serial read timeout in seconds."
-    )
-    parser.add_argument(
-        "--error-sleep",
-        type=float,
-        default=1.0,
-        help="Delay after a read/serial error before trying again."
-    )
-    parser.add_argument(
-        "--no-db",
-        action="store_true",
-        help="Do not connect to or log to the database. Useful for serial/CSV testing."
-    )
-    parser.add_argument(
-        "--no-csv",
-        action="store_true",
-        help="Do not write a CSV file."
-    )
-    parser.add_argument(
-        "--raw-debug",
-        action="store_true",
-        help="Print raw response bytes and hex."
-    )
-    parser.add_argument(
-        "--list-ports",
-        action="store_true",
-        help="List available serial ports and exit."
-    )
-    parser.add_argument(
-        "--skip-version",
-        action="store_true",
-        help="Skip the initial firmware/version query."
+        default=0.0,
+        help="Delay in seconds after each successful poll. Use 0 for fastest polling."
     )
 
     args = parser.parse_args()
-
-    if args.list_ports:
-        list_ports()
-        return
-
-    if not args.no_db:
-        if not args.table:
-            parser.error("--table is required unless --no-db is used.")
-        validate_table_name(args.table)
 
     csv_handle = None
     db_cloud = None
     ser = None
 
     try:
-        if not args.no_csv:
-            csv_handle = setup_csv()
-
-        if not args.no_db:
-            db_cloud = init_db()
+        csv_handle = setup_csv()
+        db_cloud = init_db()
 
         logging.info(
-            f"Opening serial port {args.port} at {args.baudrate} baud. "
+            f"Opening serial port {args.port} at {BAUDRATE} baud. "
             "Use a null-modem/crossover connection if using DB9 RS-232."
         )
 
-        ser = open_serial(
-            port=args.port,
-            baudrate=args.baudrate,
-            timeout=args.timeout,
+        ser = open_serial(args.port)
+
+        version_resp = query_version(ser)
+        logging.info(
+            f"Version response: {version_resp!r} "
+            f"hex={version_resp.hex(' ') if version_resp else ''}"
         )
 
-        if not args.skip_version:
-            version_resp = query_version(ser)
-            logging.info(
-                f"Version response: {version_resp!r} "
-                f"hex={version_resp.hex(' ') if version_resp else ''}"
-            )
-
-        logging.info("Power supply logging started. Press Ctrl-C to stop.")
+        logging.info(
+            f"Power supply logging started with poll_delay={args.poll_delay} s. "
+            "Press Ctrl-C to stop."
+        )
         logging_loop(
             ser=ser,
             csv_handle=csv_handle,
             db_cloud=db_cloud,
             table_name=args.table,
-            args=args,
+            poll_delay=args.poll_delay,
         )
 
     except serial.SerialException as e:
