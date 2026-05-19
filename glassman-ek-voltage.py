@@ -11,6 +11,12 @@ from the command line:
   - --port        serial COM port, e.g. COM3
   - --poll-delay  delay after each successful poll, in seconds
 
+Additional diagnostic/calibration options:
+
+  - --show-raw    print raw response ASCII/hex/status/counts to terminal
+  - --v-max-kv    full-scale voltage corresponding to 0x3FF counts
+  - --i-max-ma    full-scale current corresponding to 0x3FF counts
+
 It also:
 
   - connects to database through ida_db.pglogger + psql_credentials
@@ -55,16 +61,17 @@ import serial
 
 
 # ---------------------------------------------------------------------------
-# Hardwired instrument settings
+# Instrument settings
 # ---------------------------------------------------------------------------
 
 BAUDRATE = 9600
 SERIAL_TIMEOUT_SEC = 1.0
 
-# Full-scale ratings are needed to convert the supply's 10-bit hex counts
-# into engineering units. Change these constants if you use a different supply.
-V_MAX_KV = 10.0
-I_MAX_MA = 60.0
+# Defaults only. Override on the command line if the unit/interface is scaled
+# differently. For example, if a 0.6 kV front-panel reading is displayed as
+# 1.2 kV by this script, try --v-max-kv 5.0 instead of the default 10.0.
+DEFAULT_V_MAX_KV = 10.0
+DEFAULT_I_MAX_MA = 60.0
 
 QUERY_CMD = b"\x01Q51\r"      # SOH Q checksum CR
 VERSION_CMD = b"\x01V56\r"    # SOH V checksum CR
@@ -141,10 +148,14 @@ def setup_csv():
         "Current_mA",
         "Voltage_Counts_Raw",
         "Current_Counts_Raw",
+        "Voltage_Fraction_Fullscale",
+        "Current_Fraction_Fullscale",
         "Mode",
         "Mode_Current_Flag",
         "HV_On_Flag",
         "Fault_Flag",
+        "Status_Chars",
+        "Status_Bits",
         "Raw_Response_ASCII",
         "Raw_Response_Hex",
     ])
@@ -167,12 +178,20 @@ def read_response(ser, max_bytes=64):
     return ser.read_until(b"\r", size=max_bytes)
 
 
-def parse_query_response(resp):
+def parse_query_response(resp, v_max_kv, i_max_ma):
     """
     Parse a query response packet from the supply.
 
-    Expected response format:
+    Expected response format, based on the Glassman/XP serial protocol:
         R + 12 ASCII payload characters + 2 ASCII checksum characters + CR
+
+    Payload character map, using Python zero-based byte indexes:
+        resp[1:4]    voltage monitor counts, 000-3FF
+        resp[4:7]    current monitor counts, 000-3FF
+        resp[7:10]   reserved, usually 000
+        resp[10:13]  digital status nibbles
+        resp[13:15]  checksum
+        resp[15]     CR
 
     Example:
         b'R00000000000040\\r'
@@ -184,7 +203,7 @@ def parse_query_response(resp):
         raise RuntimeError(f"Supply returned error packet: {resp!r}")
 
     if len(resp) != 16 or resp[0:1] != b"R" or resp[-1:] != b"\r":
-        raise RuntimeError(f"Unexpected query response: {resp!r}")
+        raise RuntimeError(f"Unexpected query response: {resp!r}, hex={resp.hex(' ')}")
 
     transmitted_checksum = resp[13:15].decode("ascii")
     calculated_checksum = checksum_ascii(resp[1:13])
@@ -192,19 +211,35 @@ def parse_query_response(resp):
     if transmitted_checksum != calculated_checksum:
         raise RuntimeError(
             f"Checksum mismatch: got {transmitted_checksum}, "
-            f"expected {calculated_checksum}, response={resp!r}"
+            f"expected {calculated_checksum}, response={resp!r}, hex={resp.hex(' ')}"
         )
 
     v_counts = int(resp[1:4].decode("ascii"), 16)
     i_counts = int(resp[4:7].decode("ascii"), 16)
 
-    voltage_kv = v_counts / 0x3FF * V_MAX_KV
-    current_ma = i_counts / 0x3FF * I_MAX_MA
+    voltage_fraction = v_counts / float(0x3FF)
+    current_fraction = i_counts / float(0x3FF)
 
-    # This status-byte mapping follows the earlier working script.
-    # It should be verified against your supply's manual / command set.
-    status1 = int(chr(resp[10]), 16)
+    voltage_kv = voltage_fraction * v_max_kv
+    current_ma = current_fraction * i_max_ma
 
+    # Digital monitor bytes are three ASCII hex nibbles. For the newer
+    # Glassman protocol, the first nibble is documented as:
+    #   bit 0: current-mode flag
+    #   bit 1: fault flag
+    #   bit 2: HV-on flag
+    # For older EK/GE9 combinations these bits should be empirically verified.
+    status_chars = resp[10:13].decode("ascii", errors="replace")
+    status_values = []
+    for c in status_chars:
+        try:
+            status_values.append(int(c, 16))
+        except ValueError:
+            status_values.append(0)
+
+    status_bits = [format(v, "04b") for v in status_values]
+
+    status1 = status_values[0]
     current_mode = bool(status1 & 0b0001)
     fault = bool(status1 & 0b0010)
     hv_on = bool(status1 & 0b0100)
@@ -217,10 +252,14 @@ def parse_query_response(resp):
         "current_ma": current_ma,
         "voltage_counts_raw": v_counts,
         "current_counts_raw": i_counts,
+        "voltage_fraction_fullscale": voltage_fraction,
+        "current_fraction_fullscale": current_fraction,
         "mode": "current" if current_mode else "voltage",
         "mode_current_flag": 1 if current_mode else 0,
         "fault_flag": 1 if fault else 0,
         "hv_on_flag": 1 if hv_on else 0,
+        "status_chars": status_chars,
+        "status_bits": " ".join(status_bits),
     }
 
 
@@ -261,7 +300,7 @@ def query_version(ser):
     return read_response(ser, max_bytes=16)
 
 
-def query_supply(ser):
+def query_supply(ser, v_max_kv, i_max_ma):
     """
     Query the supply once and return parsed data.
     """
@@ -271,7 +310,7 @@ def query_supply(ser):
     ser.flush()
 
     resp = read_response(ser, max_bytes=16)
-    return parse_query_response(resp)
+    return parse_query_response(resp, v_max_kv=v_max_kv, i_max_ma=i_max_ma)
 
 
 def log_to_database(db_cloud, table_name, data):
@@ -304,34 +343,60 @@ def write_csv_row(csv_handle, timestamp, data):
         data["current_ma"],
         data["voltage_counts_raw"],
         data["current_counts_raw"],
+        data["voltage_fraction_fullscale"],
+        data["current_fraction_fullscale"],
         data["mode"],
         data["mode_current_flag"],
         data["hv_on_flag"],
         data["fault_flag"],
+        data["status_chars"],
+        data["status_bits"],
         data["raw_ascii"],
         data["raw_hex"],
     ])
     csv_handle.file.flush()
 
 
-def logging_loop(ser, csv_handle, db_cloud, table_name, poll_delay):
+def print_reading(timestamp, data, show_raw):
+    """
+    Print one reading to the terminal.
+    """
+    print(
+        f"{timestamp} | "
+        f"{data['voltage_kv']:.3f} kV, "
+        f"{data['current_ma']:.3f} mA, "
+        f"mode={data['mode']}, "
+        f"HV_ON={bool(data['hv_on_flag'])}, "
+        f"FAULT={bool(data['fault_flag'])}"
+    )
+
+    if show_raw:
+        print(
+            "    raw_ascii={!r} raw_hex={} V_counts={} I_counts={} "
+            "V_frac={:.6f} I_frac={:.6f} status_chars={!r} status_bits={}".format(
+                data["raw_ascii"],
+                data["raw_hex"],
+                data["voltage_counts_raw"],
+                data["current_counts_raw"],
+                data["voltage_fraction_fullscale"],
+                data["current_fraction_fullscale"],
+                data["status_chars"],
+                data["status_bits"],
+            )
+        )
+
+
+def logging_loop(ser, csv_handle, db_cloud, table_name, poll_delay,
+                 v_max_kv, i_max_ma, show_raw):
     """
     Poll the supply, print readings, write CSV rows, and push data to DB.
     """
     while True:
         try:
-            data = query_supply(ser)
+            data = query_supply(ser, v_max_kv=v_max_kv, i_max_ma=i_max_ma)
             timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-            print(
-                f"{timestamp} | "
-                f"{data['voltage_kv']:.3f} kV, "
-                f"{data['current_ma']:.3f} mA, "
-                f"mode={data['mode']}, "
-                f"HV_ON={bool(data['hv_on_flag'])}, "
-                f"FAULT={bool(data['fault_flag'])}"
-            )
-
+            print_reading(timestamp, data, show_raw=show_raw)
             write_csv_row(csv_handle, timestamp, data)
 
             if db_cloud:
@@ -381,6 +446,29 @@ def main():
         default=0.0,
         help="Delay in seconds after each successful poll. Use 0 for fastest polling."
     )
+    parser.add_argument(
+        "--show-raw",
+        action="store_true",
+        help="Print raw response ASCII/hex, counts, fractions, and digital status bits."
+    )
+    parser.add_argument(
+        "--v-max-kv",
+        type=float,
+        default=DEFAULT_V_MAX_KV,
+        help=(
+            "Full-scale voltage in kV corresponding to raw voltage counts 0x3FF. "
+            f"Default: {DEFAULT_V_MAX_KV}."
+        )
+    )
+    parser.add_argument(
+        "--i-max-ma",
+        type=float,
+        default=DEFAULT_I_MAX_MA,
+        help=(
+            "Full-scale current in mA corresponding to raw current counts 0x3FF. "
+            f"Default: {DEFAULT_I_MAX_MA}."
+        )
+    )
 
     args = parser.parse_args()
 
@@ -395,6 +483,10 @@ def main():
         logging.info(
             f"Opening serial port {args.port} at {BAUDRATE} baud. "
             "Use a null-modem/crossover connection if using DB9 RS-232."
+        )
+        logging.info(
+            f"Using full-scale conversion: v_max_kv={args.v_max_kv}, "
+            f"i_max_ma={args.i_max_ma}."
         )
 
         ser = open_serial(args.port)
@@ -415,6 +507,9 @@ def main():
             db_cloud=db_cloud,
             table_name=args.table,
             poll_delay=args.poll_delay,
+            v_max_kv=args.v_max_kv,
+            i_max_ma=args.i_max_ma,
+            show_raw=args.show_raw,
         )
 
     except serial.SerialException as e:
