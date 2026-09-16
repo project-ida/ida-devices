@@ -306,7 +306,11 @@ def _parse_args():
     parser.add_argument(
         "data_folder",
         nargs="?",
-        help="Folder path containing ROOT files. If omitted, you'll be prompted.",
+        help=(
+            "Full path to the top-level CAEN data folder containing DAQ "
+            "(e.g., /home/user/caen-master-project). All subfolders are monitored "
+            "for ROOT files. If omitted, you'll be prompted."
+        ),
     )
     parser.add_argument(
         "table_prefix",
@@ -337,7 +341,11 @@ def main():
     if args.data_folder:
         data_folder = args.data_folder.strip()
     else:
-        data_folder = input("Enter the folder path containing ROOT files: ").strip()
+        print("All subfolders will be monitored for ROOT files.")
+        print("Example: /home/user/caen-master-project")
+        data_folder = input(
+            "Enter the full path to the top-level CAEN data folder (containing DAQ): "
+        ).strip()
 
     if not os.path.isdir(data_folder):
         print(f"Error: {data_folder} is not a valid directory")
@@ -356,7 +364,7 @@ def main():
     observer = Observer()
     observer.schedule(event_handler, path=data_folder, recursive=True)
 
-    print(f"Monitoring directory: {data_folder}")
+    print(f"Monitoring directory and all subfolders: {data_folder}")
     observer.start()
 
     try:
