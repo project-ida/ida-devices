@@ -299,6 +299,11 @@ def main():
     parser = argparse.ArgumentParser(description="Process ROOT files for all events")
     args = parser.parse_args()
 
+    print("Note: The top-level CAEN data folder is expected directly inside your user/home folder.")
+    print(r"Example (Windows): C:\Users\yourname\caen-master-project")
+    print("Example (Linux): /home/yourname/caen-master-project")
+    print("This folder layout is used to record file paths correctly in the database.\n")
+
     # Prompt for whether this is the data collection computer
     while True:
         is_collection_computer = input("Is this the computer where the data was collected? (y/n): ").strip().lower()
