@@ -141,6 +141,22 @@ def get_file_number(filename):
     match = re.search(r'_(\d+)\.root', filename)
     return int(match.group(1)) if match else 0
 
+
+def read_progress_csv():
+    # A column containing "Failed" makes pandas read True/False as strings.
+    # Restore the original statuses so pending files are still processed.
+    statuses = {"True": True, "False": False, "Failed": "Failed"}
+
+    def parse_status(value):
+        if value not in statuses:
+            raise ValueError(f"Unknown processed status in {csv_path}: {value!r}")
+        return statuses[value]
+
+    df = pd.read_csv(csv_path, converters={"processed": parse_status})
+    df["processed"] = df["processed"].astype(object)
+    return df
+
+
 def get_acquisition_start(df):
     file_path = df.iloc[0]['filename']
     if not os.path.exists(file_path):
@@ -217,8 +233,11 @@ def process_root_file(file_path, table_prefix, channel_number, acquisition_start
             total_events = 0
             chunk_number = 0
 
-            # For filename start/end — keep behaviour (compute from the *last* chunk, same as before)
-            last_chunk_abs_sec = None
+            # Epoch picoseconds exceed int64. Keep absolute timestamps as Python
+            # integers, matching caen-rootprocessing.py, to retain exact timing.
+            acq_start_ps = int(acquisition_start_ns) * 1_000
+            start_ps = None
+            end_ps = None
 
             for arrays in tree.iterate(
                 branches_to_import,
@@ -231,15 +250,11 @@ def process_root_file(file_path, table_prefix, channel_number, acquisition_start
                     print(f"⚠️  Chunk {chunk_number} is empty. Skipping.")
                     continue
 
-                # --- TIMING: preserve exact picoseconds (Timestamp already in ps since start) ---
-                rel_ps = arrays["Timestamp"].astype(np.int64)  # integer picoseconds since experiment start
-                acq_start_ps = acquisition_start_ns * 1_000     # ns → ps (integer)
-                abs_ps_total = acq_start_ps + rel_ps            # epoch picoseconds (integer)
-
-                # Optional float seconds for the "start/end" prints (mimics previous style)
-                abs_sec_float = abs_ps_total / 1_000_000_000_000.0
-                last_chunk_abs_sec = abs_sec_float  # remember last chunk for filename stamps
-                # -----------------------------------------------------------------------------
+                rel_ps = arrays["Timestamp"]  # integer picoseconds since experiment start
+                chunk_start_ps = acq_start_ps + int(np.min(rel_ps))
+                chunk_end_ps = acq_start_ps + int(np.max(rel_ps))
+                start_ps = chunk_start_ps if start_ps is None else min(start_ps, chunk_start_ps)
+                end_ps = chunk_end_ps if end_ps is None else max(end_ps, chunk_end_ps)
 
                 # DATA: energies
                 energy = arrays["Energy"].astype(np.float64)
@@ -255,10 +270,10 @@ def process_root_file(file_path, table_prefix, channel_number, acquisition_start
 
                 # Build rows
                 event_rows = []
-                for ps_abs, e, p in zip(abs_ps_total, energy, psp):
+                for rel_timestamp, e, p in zip(rel_ps, energy, psp):
+                    ps_abs = acq_start_ps + int(rel_timestamp)
                     # Split epoch picoseconds into (seconds, ps remainder)
-                    sec = ps_abs // 1_000_000_000_000
-                    sub_ps = int(ps_abs % 1_000_000_000_000)
+                    sec, sub_ps = divmod(ps_abs, 1_000_000_000_000)
 
                     # DB 'time' (timestamp with microseconds) — same appearance as before
                     time_value = datetime.fromtimestamp(int(sec)) + timedelta(microseconds=sub_ps // 1_000_000)
@@ -277,16 +292,16 @@ def process_root_file(file_path, table_prefix, channel_number, acquisition_start
                 print(f"⚠️  No events found in {file_path}")
                 return False, None, None
 
-            # --- start/end strings (use last chunk, preserving your previous behaviour) ---
-            start_time = float(np.min(last_chunk_abs_sec))
-            end_time   = float(np.max(last_chunk_abs_sec))
-            start_time_str = datetime.fromtimestamp(start_time).strftime('%Y%m%d_%H%M%S')
-            end_time_str   = datetime.fromtimestamp(end_time).strftime('%Y%m%d_%H%M%S')
-            # ------------------------------------------------------------------------------
+            # Name the file using the full acquisition range across all chunks.
+            # Integer division avoids rounding an event into the next second.
+            start_time = datetime.fromtimestamp(start_ps // 1_000_000_000_000)
+            end_time = datetime.fromtimestamp(end_ps // 1_000_000_000_000)
+            start_time_str = start_time.strftime('%Y%m%d_%H%M%S')
+            end_time_str = end_time.strftime('%Y%m%d_%H%M%S')
 
             print(f"🎉 Done: inserted {total_events} events from {os.path.basename(file_path)}")
-            print(f"current file start time: {datetime.fromtimestamp(start_time).strftime('%Y-%m-%d %H:%M:%S')}")
-            print(f"current file end time: {datetime.fromtimestamp(end_time).strftime('%Y-%m-%d %H:%M:%S')}")
+            print(f"current file start time: {start_time.strftime('%Y-%m-%d %H:%M:%S')}")
+            print(f"current file end time: {end_time.strftime('%Y-%m-%d %H:%M:%S')}")
             return True, start_time_str, end_time_str
 
     except Exception as e:
@@ -298,6 +313,10 @@ def main():
     # Set up argument parser
     parser = argparse.ArgumentParser(description="Process ROOT files for all events")
     args = parser.parse_args()
+
+    print("Before continuing, stop caen-rootprocessing.py if it watches these files,")
+    print("or use a folder outside its watched directory. Running both scripts on")
+    print("the same files can cause duplicate database inserts and conflicting renames.\n")
 
     print("Note: The top-level CAEN data folder is expected directly inside your user/home folder.")
     print(r"Example (Windows): C:\Users\yourname\caen-master-project")
@@ -354,7 +373,7 @@ def main():
 
     # Check if CSV exists
     if os.path.exists(csv_path):
-        df = pd.read_csv(csv_path)
+        df = read_progress_csv()
         total_files = len(df)
         unprocessed_files = len(df[df['processed'] == False])
         failed_files = len(df[df['processed'] == 'Failed'])
@@ -367,7 +386,11 @@ def main():
         print()
 
         if unprocessed_files == 0:
-            print("✅ All valid files in processed_files.csv have been processed or failed.")
+            if failed_files:
+                print(f"No pending files remain, but {failed_files} files are marked Failed.")
+                print("Review their errors and database state before retrying; some events may already be saved.")
+                return
+            print("All files in processed_files.csv are marked processed; no failures recorded.")
             print("🗑️  If you want to start a new processing run, please delete the CSV file:")
             print(f"    {csv_path}")
             print("Then re-run this script to select a new folder and channel.")
@@ -432,7 +455,7 @@ def main():
         # Create DataFrame with full paths
         df = pd.DataFrame({
             'filename': files,  # Use full paths directly from glob
-            'processed': [False] * len(files)
+            'processed': pd.Series([False] * len(files), dtype=object)
         })
         df.to_csv(csv_path, index=False)
         total_files = len(df)
@@ -519,7 +542,7 @@ def main():
         print("Connection closed")
         # Check for unprocessed and failed files in the CSV
         if os.path.exists(csv_path):
-            df = pd.read_csv(csv_path)
+            df = read_progress_csv()
             unprocessed_files = df[df['processed'] == False]['filename'].tolist()
             failed_files = df[df['processed'] == 'Failed']['filename'].tolist()
             if unprocessed_files or failed_files:
@@ -529,14 +552,16 @@ def main():
                         print(f"  - {os.path.basename(file)}")
                     print(f"Total unprocessed files: {len(unprocessed_files)}")
                 if failed_files:
-                    print("\n⚠️ The following files in processed_files.csv failed processing (possibly incomplete or corrupted):")
+                    print("\nThe following files failed processing; see the error reported for each file:")
                     for file in failed_files:
                         print(f"  - {os.path.basename(file)}")
                     print(f"Total failed files: {len(failed_files)}")
             else:
-                print("\n✅ All files in processed_files.csv have been processed or failed.")
-            if not unprocessed_files:
-                print("\n🗑️ All valid files have been processed or failed. If you want to start a new processing run, please delete the CSV file:")
+                print("\nAll files in processed_files.csv are marked processed; no failures recorded.")
+            if failed_files:
+                print("Review the errors and database state before retrying; some events may already be saved.")
+            if not unprocessed_files and not failed_files:
+                print("\nIf you want to start a new processing run, please delete the CSV file:")
                 print(f"    {csv_path}")
         else:
             print(f"\n⚠️ No processed_files.csv found at {csv_path}")
