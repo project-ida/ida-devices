@@ -83,12 +83,14 @@ def main():
     parser.add_argument('--resistor', type=float, required=True, help="Value of the resistor in Ohms (e.g., 458).")
     parser.add_argument('--pressure-lowest', type=float, required=True, help="Pressure corresponding to 4 mA (e.g., 0 bar).")
     parser.add_argument('--pressure-highest', type=float, required=True, help="Pressure corresponding to 20 mA (e.g., 7 bar).")
+    parser.add_argument('--voltage', type=float, required=True, help="Voltage range for the pressure calculation (e.g., 5 or 10 V); used when --resistor is 0.")
     args = parser.parse_args()
 
     table_name = args.table
     resistor_value = args.resistor
     pressure_lowest = args.pressure_lowest
     pressure_highest = args.pressure_highest
+    voltage_range = args.voltage
 
     # Initial configurations
     channels = [4, 5, 6, 7]
@@ -113,7 +115,7 @@ def main():
         input('\nPress ENTER to continue ...')
         start_acquisition(hat, channel_mask, 0, scan_rate, options)
         logging.info("DAQ acquisition started. Press Ctrl-C to stop.")
-        read_and_display_data(hat, num_channels, csv_handle, db_cloud, table_name, resistor_value, pressure_lowest, pressure_highest)
+        read_and_display_data(hat, num_channels, csv_handle, db_cloud, table_name, resistor_value, pressure_lowest, pressure_highest, voltage_range=voltage_range)
     except (HatError, ValueError) as err:
         logging.error(f"Hardware error: {err}")
     finally:
@@ -135,7 +137,7 @@ def stop_and_cleanup(hat):
     hat.a_in_scan_stop()
     hat.a_in_scan_cleanup()
 
-def read_and_display_data(hat, num_channels, csv_handle, db_cloud, table_name, resistor_value, pressure_lowest, pressure_highest):
+def read_and_display_data(hat, num_channels, csv_handle, db_cloud, table_name, resistor_value, pressure_lowest, pressure_highest, voltage_range=5.0):
     """
     Reads and processes data from the DAQ with aggregation.
     """
@@ -168,9 +170,10 @@ def read_and_display_data(hat, num_channels, csv_handle, db_cloud, table_name, r
 
                 # Calculate currents and pressures
                 if resistor_value == 0:
-                    # Direct 0-5V to pressure mapping
+                    # Direct 0-full-scale voltage to pressure mapping
+                    currents = [0 for value in aggregated_values]
                     pressures = [
-                        ((voltage - 0) * (pressure_highest - pressure_lowest) / 5) + pressure_lowest
+                        ((voltage - 0) * (pressure_highest - pressure_lowest) / voltage_range) + pressure_lowest
                         for voltage in aggregated_values
                     ]
                 else:
