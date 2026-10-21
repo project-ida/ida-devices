@@ -192,7 +192,7 @@ def read_and_display_data(hat, num_channels, csv_handle, db_cloud, table_name, r
                 # Display output for each channel
                 print(f"{timestamp}")
                 for i, (voltage, current, pressure) in enumerate(zip(aggregated_values, currents, pressures)):
-                    print(f"  Channel {i+1}: Voltage={voltage:.2f} V, Current={current:.2f} mA, Pressure={pressure:.2f} bar")
+                    print(f"  Channel {i+1}: Voltage={voltage:.2f} V, Current={current:.2f} mA, Pressure={pressure:.4f} bar")
 
                 # Write to CSV
                 csv_handle.writer.writerow([timestamp] + aggregated_values.tolist() + currents + pressures)
