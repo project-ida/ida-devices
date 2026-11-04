@@ -267,8 +267,6 @@ def handle_root_file(file_path, table_prefix):
         # Attempt to process the file
         file_processed, start_time_str, end_time_str = process_root_file(file_path, table_prefix)
         if file_processed:
-            # send heartbeat to healthchecks.io to signal that the data collection process is still alive
-            send_heartbeat()
             # Mark the file as processed
             processed_files[file_path] = True
             # Rename the file with start and end times and changed from root to root2
@@ -369,7 +367,9 @@ def main():
 
     try:
         while True:
-            time.sleep(1)
+            # Report connectivity even when no ROOT files are ready to process.
+            send_heartbeat()
+            time.sleep(60)
     except KeyboardInterrupt:
         observer.stop()
     observer.join()
