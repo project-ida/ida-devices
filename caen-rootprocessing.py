@@ -201,7 +201,7 @@ def process_root_file(file_path, table_prefix):
 
             # ---- Preserve integer picoseconds for exact timing ----
             # Timestamp is already integer picoseconds since experiment start
-            ts_rel_ps = df["Timestamp"].astype("int64").copy()
+            ts_rel_ps = df["Timestamp"].copy()
             # -------------------------------------------------------
 
             # PSP logic (only change requested)
