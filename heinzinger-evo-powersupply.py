@@ -23,8 +23,11 @@ libs/evo_device.py; storage, averaging, database work and the viewer remain here
 For real runs, set COMPUTER_NAME and provide psql_credentials.py as in the other
 device scripts. Optional telegram_credentials.py enables notifications. The
 PostgreSQL tables must already exist: evo(time, channels) with channels ordered
-[mean_voltage_V, mean_current_mA], and the existing root_files table. Inserts
-use explicit UTC timestamps; the database connection's timezone is set to UTC.
+[mean_voltage_V, mean_current_mA], and the existing root_files table. The evo
+time column should be timestamp without time zone. All saved/displayed dates
+and times use the acquisition computer's local clock, with no timezone suffix
+or conversion on upload. This includes CSVs, database values, RAW data,
+filenames, run metadata and terminal logging.
 Missing PostgreSQL credentials or the psycopg2 driver prevent a real run from
 starting. This local configuration check does not connect to the database:
 network/database outages still allow acquisition and queue data for retry.
@@ -39,12 +42,16 @@ Files and timings
 
 Run names are exact, portable folder names. An existing run folder is an error;
 there is no automatic suffix or resume. Each raw TTree (voltage or current)
-has its own int64 `time` (Unix MICROSECONDS, UTC) and float64 value branch
-(`voltage` in V, `current` in signed mA). `time` is the PC request time, not an
-instrument ADC timestamp. Only successful measurement replies enter the trees.
+has its own string `time` (local YYYY-MM-DD HH:MM:SS.ffffff) and float64 value
+branch (`voltage` in V, `current` in signed mA). `time` is the PC request time,
+not an instrument ADC timestamp. Each quantity retains its separate request
+time, including microseconds. Only successful replies enter the trees.
 Errors, service notifications and connection-time settings go into the log.
+Raw values and one-second averages are rounded to four decimal places. CSV and
+terminal values show exactly four places; ROOT/PostgreSQL numeric floats do not
+retain trailing zeros. Daily CSV filenames follow the computer's local date.
 
-Completed UTC seconds are averaged independently per quantity and printed.
+Completed one-second intervals are averaged independently per quantity and printed.
 Partial startup/shutdown seconds stay in the raw data. Missing quantities are
 empty CSV fields / SQL NULL. Each average is appended and fsynced to its daily
 CSV BEFORE it is eligible for upload. A bookmark is the number of data rows
@@ -80,7 +87,7 @@ from __future__ import annotations
 import argparse
 from collections import deque
 import csv
-from datetime import datetime, timezone
+from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import logging
@@ -117,13 +124,14 @@ MAX_PENDING_READINGS = 30000
 CSV_FIELDS = ("time", "voltage_V", "current_mA")
 
 
-def utc_now():
-    return datetime.now(timezone.utc).isoformat(timespec="microseconds")
+def local_now():
+    return datetime.now().isoformat(sep=" ", timespec="microseconds")
 
 
-def utc_from_us(stamp):
+def local_from_us(stamp):
+    """Format an internal request-clock counter using the computer's local time."""
     seconds, micros = divmod(int(stamp), 1_000_000)
-    return datetime.fromtimestamp(seconds, timezone.utc).replace(microsecond=micros)
+    return datetime.fromtimestamp(seconds).replace(microsecond=micros)
 
 
 def atomic_text(path, text):
@@ -163,7 +171,7 @@ class RootRecorder:
         if self.count >= MAX_PENDING_READINGS:
             self.session.lost_readings(1, "ROOT recording buffer is full after a storage failure")
             return
-        self.buffer[reading.channel].append((reading.time, reading.value))
+        self.buffer[reading.channel].append((reading.time, round(reading.value, 4)))
         self.count += 1
 
     def flush(self, force=False):
@@ -175,12 +183,13 @@ class RootRecorder:
             self.path = self.session.folder / "RAW" / f"{self.session.args.run_name}_{self.part:06d}.writing.root"
             self.file = uproot.recreate(self.path, compression=uproot.ZLIB(1))
             for name in self.buffer:
-                self.file.mktree(name, {"time": "int64", name: "float64"})
+                self.file.mktree(name, {"time": "string", name: "float64"})
             self.first_us = self.last_us = None
         stamps = []
         for name, readings in self.buffer.items():
             if readings:
-                self.file[name].extend({"time": np.array([r[0] for r in readings], dtype=np.int64),
+                self.file[name].extend({"time": [local_from_us(r[0]).isoformat(sep=" ", timespec="microseconds")
+                                               for r in readings],
                                         name: np.array([r[1] for r in readings], dtype=np.float64)})
                 stamps.extend(r[0] for r in readings)
         self.file.file.sink.flush()
@@ -194,7 +203,7 @@ class RootRecorder:
             self.session.stats["records_written"] += self.count
             self.session.stats["records_synced"] = self.session.stats["records_written"]
             self.session.stats["current_file"] = self.path.name
-            self.session.stats["last_sync_utc"] = utc_now()
+            self.session.stats["last_sync_time"] = local_now()
         for readings in self.buffer.values():
             readings.clear()
         self.count = 0
@@ -213,8 +222,8 @@ class RootRecorder:
         # as complete to the registration worker.
         with self.path.open("r+b") as stream:
             os.fsync(stream.fileno())
-        first = utc_from_us(self.first_us).strftime("%Y%m%d_%H%M%S")
-        last = utc_from_us(self.last_us).strftime("%Y%m%d_%H%M%S")
+        first = local_from_us(self.first_us).strftime("%Y%m%d_%H%M%S")
+        last = local_from_us(self.last_us).strftime("%Y%m%d_%H%M%S")
         closed = self.path.with_name(f"{self.session.args.run_name}_{first}-{last}_{self.part:06d}.root")
         self.path.rename(closed)
         with self.session.lock:
@@ -249,7 +258,7 @@ class AveragesRecorder:
         self.writer = None
 
     def append(self, second, values):
-        stamp = datetime.fromtimestamp(second, timezone.utc)
+        stamp = datetime.fromtimestamp(second)
         day = stamp.strftime("%Y-%m-%d")
         if day != self.day:
             self.close()
@@ -277,7 +286,8 @@ class AveragesRecorder:
         # No row is exposed to the DB worker until flush + fsync both succeed.
         position = self.file.tell()
         try:
-            self.writer.writerow([stamp.isoformat()] + values)
+            self.writer.writerow([stamp.isoformat(sep=" ", timespec="seconds")] +
+                                 [f"{value:.4f}" if value is not None else "" for value in values])
             self.file.flush()
             os.fsync(self.file.fileno())
         except Exception:
@@ -311,7 +321,7 @@ class OneSecondAverages:
         # assigned to the following second, even when it arrives after it.
         while watermark_us // 1_000_000 > self.second:
             counts = [len(self.values[name]) for name in ("voltage", "current")]
-            means = [math.fsum(self.values[name]) / len(self.values[name])
+            means = [round(math.fsum(self.values[name]) / len(self.values[name]), 4)
                      if self.values[name] else None for name in ("voltage", "current")]
             self.emit(self.second, means, counts)
             self.second += 1
@@ -320,7 +330,7 @@ class OneSecondAverages:
     def add(self, reading: Reading):
         self.advance(reading.time)
         if reading.time // 1_000_000 == self.second:
-            self.values[reading.channel].append(reading.value)
+            self.values[reading.channel].append(round(reading.value, 4))
         self.advance(reading.completed_us)
 
 
@@ -370,7 +380,7 @@ class DatabaseWorker:
         config = load_database_config()
         import psycopg2
         conn = psycopg2.connect(**config, connect_timeout=3,
-                                options="-c timezone=UTC -c statement_timeout=5000",
+                                options="-c statement_timeout=5000",
                                 keepalives=1, keepalives_idle=5,
                                 keepalives_interval=2, keepalives_count=2)
         return conn
@@ -406,6 +416,8 @@ class DatabaseWorker:
                 record = next(csv.reader([line.decode("utf-8")]))
                 if len(record) != 3:
                     raise ValueError("Invalid averages CSV row")
+                # The CSV already contains the acquisition computer's local
+                # wall-clock time. Send it unchanged, without timezone conversion.
                 stamp = datetime.fromisoformat(record[0])
                 channels = [float(value) if value else None for value in record[1:]]
                 if any(value is not None and not math.isfinite(value) for value in channels):
@@ -529,7 +541,7 @@ class Session:
         self.log.setLevel(logging.INFO)
         self.log.propagate = False
         formatter = logging.Formatter("%(asctime)s [%(levelname)s] %(message)s")
-        formatter.converter = time.gmtime
+        formatter.converter = time.localtime
         for handler in (logging.FileHandler(self.folder / "run.log", encoding="utf-8"), logging.StreamHandler()):
             handler.setFormatter(formatter)
             self.log.addHandler(handler)
@@ -552,19 +564,20 @@ class Session:
         self.pending_roots = deque()
         self.stats = dict(state="connecting", synthetic=args.demo, error=None, stop_reason=None,
                           elapsed_s=0, target_qps=args.qps, achieved_qps=0, measurements_received=0,
-                          records_written=0, records_synced=0, current_file=None, last_sync_utc=None,
+                          records_written=0, records_synced=0, current_file=None, last_sync_time=None,
                           connection_id=0, reconnect_attempts=0, latest={"voltage": None, "current": None},
-                          identity=None, settings_snapshot={}, settings_captured_utc=None,
+                          identity=None, settings_snapshot={}, settings_captured_time=None,
                           last_notification=None, sequence=0, output_dir=str(self.folder),
                           averages_saved=0, averages_uploaded=0, pending_root_files=0,
                           lost_readings=0, lost_averages=0,
                           database_state="disabled (demo)" if args.demo else "waiting")
-        self.run_info = dict(schema_version=1, run_name=args.run_name, created_utc=utc_now(),
+        self.run_info = dict(schema_version=2, run_name=args.run_name, created_time=local_now(),
                              computer=computer, device=DEVICE, table=TABLE, synthetic=args.demo,
                              evo_host=args.evo_host, evo_port=args.evo_port, evo_serial=args.evo_serial,
                              qps=args.qps, root_file_mb=args.root_file_mb,
-                             raw_time_unit="Unix microseconds, UTC", timestamp_semantics="PC request time",
+                             raw_time_format="YYYY-MM-DD HH:MM:SS.ffffff", timestamp_semantics="PC request time",
                              voltage_unit="V", current_unit="mA", average_interval_seconds=1,
+                             value_decimal_places=4, time_zone="computer local time",
                              average_channels=["mean_voltage_V", "mean_current_mA"],
                              root_directory=f"evo/DAQ/{args.run_name}/RAW", state="recording")
         atomic_text(self.folder / "run.json", json.dumps(self.run_info, indent=2) + "\n")
@@ -688,7 +701,7 @@ class Session:
                             self.stats["connection_id"] += 1
                             self.stats.update(identity=device.identity,
                                               settings_snapshot=device.settings_snapshot,
-                                              settings_captured_utc=device.settings_captured_utc)
+                                              settings_captured_time=device.settings_captured_time)
                         self.log.info("Connected: %s; connection-time settings: %s",
                                       device.identity, device.settings_snapshot)
                         while not self.stop.is_set():
@@ -733,12 +746,12 @@ class Session:
         last_csv_retry = last_root_retry = 0.0
 
         def emit(second, means, counts):
-            voltage = "N/A" if means[0] is None else f"{means[0]:.6g} V"
-            current = "N/A" if means[1] is None else f"{means[1]:.6g} mA"
+            voltage = "N/A" if means[0] is None else f"{means[0]:.4f} V"
+            current = "N/A" if means[1] is None else f"{means[1]:.4f} mA"
             with self.lock:
                 pending = self.stats["averages_saved"] - self.stats["averages_uploaded"]
             self.log.info("%s | V=%s (n=%s) | I=%s (n=%s) | DB=%s, pending=%s",
-                          datetime.fromtimestamp(second, timezone.utc).isoformat(), voltage,
+                          datetime.fromtimestamp(second).isoformat(sep=" ", timespec="seconds"), voltage,
                           counts[0], current, counts[1], self.snapshot()["database_state"], pending)
             if len(pending_averages) < MAX_PENDING_READINGS:
                 pending_averages.append((second, means))
@@ -946,7 +959,7 @@ def main(argv=None):
         status = session.snapshot()
         session.set_status(state="error" if status["error"] else "saved",
                            finished_elapsed_s=(time.perf_counter_ns() - session.start_ns) / 1e9)
-        session.run_info.update(state="error" if status["error"] else "stopped", finished_utc=utc_now(),
+        session.run_info.update(state="error" if status["error"] else "stopped", finished_time=local_now(),
                                 statistics=session.snapshot())
         atomic_text(folder / "run.json", json.dumps(session.run_info, indent=2, allow_nan=False) + "\n")
         status = session.snapshot()

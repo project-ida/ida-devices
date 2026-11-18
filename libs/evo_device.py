@@ -9,8 +9,9 @@ The acquisition script decides when to reconnect and how to process readings.
         for reading in device.measurements():  # One sequential V/I cycle.
             print(reading.channel, reading.time, reading.value)
 
-Reading.time is the PC request time in Unix microseconds (UTC), not an ADC
-timestamp. Voltage is in V; current is in signed mA. At most 250 commands/s
+Reading.time is an internal Unix-microsecond counter for the PC request time,
+not an ADC timestamp. The acquisition script writes it as the computer's local
+date and time. Voltage is in V; current is in signed mA. At most 250 commands/s
 are sent in total. No settings, output-switching or reset commands are allowed.
 
 Optional stop/on_idle/on_notification arguments let an acquisition loop stop
@@ -22,7 +23,7 @@ provides the real acquisition script's cross-process connection reservation.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime
 import hashlib
 import math
 from pathlib import Path
@@ -177,7 +178,7 @@ class EvoDevice:
         self.last_send_ns = 0
         self.identity = None
         self.settings_snapshot = {}
-        self.settings_captured_utc = None
+        self.settings_captured_time = None
         self._first_identity = None
 
     def connect(self):
@@ -196,7 +197,7 @@ class EvoDevice:
             settings = {command: self.query(command).raw for command in SNAPSHOT_COMMANDS}
             self.identity = identity
             self.settings_snapshot = settings
-            self.settings_captured_utc = datetime.now(timezone.utc).isoformat(timespec="microseconds")
+            self.settings_captured_time = datetime.now().isoformat(sep=" ", timespec="microseconds")
         except Exception:
             self.close()
             raise

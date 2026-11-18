@@ -80,9 +80,9 @@ function updateStatus(status){
  $('averages').textContent=whole(status.averages_saved)+' / '+whole(status.averages_pending);
  $('uploaded').textContent=whole(status.averages_uploaded);$('lost').textContent=whole(status.lost_readings);
  $('pending-roots').textContent=whole(status.pending_root_files);
- $('sync-time').textContent=status.last_sync_utc||'Not yet synced';$('stop-reason').textContent=status.stop_reason||'—';
+ $('sync-time').textContent=status.last_sync_time||'Not yet synced';$('stop-reason').textContent=status.stop_reason||'—';
  if(status.output_dir)$('folder').value=status.output_dir;$('current-file').textContent=status.current_file?'Current file: '+status.current_file:'';
- $('settings-time').textContent=status.settings_captured_utc?'Snapshot captured: '+status.settings_captured_utc:'No settings snapshot received';
+ $('settings-time').textContent=status.settings_captured_time?'Snapshot captured: '+status.settings_captured_time:'No settings snapshot received';
  $('settings').textContent=JSON.stringify({identity:status.identity??null,settings:status.settings_snapshot??null},null,2);
  $('notification').hidden=!status.last_notification;$('notification').textContent=status.last_notification?'Supply notification: '+String(status.last_notification):'';
  showMessages();
