@@ -25,9 +25,11 @@ device scripts. Optional telegram_credentials.py enables notifications. The
 PostgreSQL tables must already exist: evo(time, channels) with channels ordered
 [mean_voltage_V, mean_current_mA], and the existing root_files table. Inserts
 use explicit UTC timestamps; the database connection's timezone is set to UTC.
-Database unavailability, including missing database dependencies/configuration,
-does not stop acquisition. Database operations and alerts run in background
-threads, with bounded network waits and rate-limited notifications.
+Missing PostgreSQL credentials or the psycopg2 driver prevent a real run from
+starting. This local configuration check does not connect to the database:
+network/database outages still allow acquisition and queue data for retry.
+Database operations and alerts run in background threads, with bounded network
+waits and rate-limited notifications. Telegram credentials remain optional.
 
 Files and timings
 -----------------
@@ -182,7 +184,9 @@ class RootRecorder:
                                         name: np.array([r[1] for r in readings], dtype=np.float64)})
                 stamps.extend(r[0] for r in readings)
         self.file.file.sink.flush()
-        with self.path.open("rb") as stream:
+        # Windows' _commit/FlushFileBuffers requires a writable handle. A
+        # read-only handle works on POSIX but raises EBADF on Windows.
+        with self.path.open("r+b") as stream:
             os.fsync(stream.fileno())
         self.first_us = min(stamps) if self.first_us is None else min(self.first_us, min(stamps))
         self.last_us = max(stamps) if self.last_us is None else max(self.last_us, max(stamps))
@@ -207,7 +211,7 @@ class RootRecorder:
             return
         # Include any closing metadata in the sync before publishing the file
         # as complete to the registration worker.
-        with self.path.open("rb") as stream:
+        with self.path.open("r+b") as stream:
             os.fsync(stream.fileno())
         first = utc_from_us(self.first_us).strftime("%Y%m%d_%H%M%S")
         last = utc_from_us(self.last_us).strftime("%Y%m%d_%H%M%S")
@@ -320,6 +324,38 @@ class OneSecondAverages:
         self.advance(reading.completed_us)
 
 
+def load_database_config():
+    """Validate local setup without requiring the database to be reachable."""
+    try:
+        import psql_credentials as creds
+    except ImportError as error:
+        raise ValueError("Cannot load psql_credentials.py. Copy the database credentials "
+                         "file beside this script before starting a real run.") from error
+    required = ("PGHOST", "PGPORT", "PGDATABASE", "PGUSER", "PGPASSWORD")
+    missing = [name for name in required if getattr(creds, name, None) is None]
+    if missing:
+        raise ValueError("psql_credentials.py is missing: " + ", ".join(missing))
+    for name in ("PGHOST", "PGDATABASE", "PGUSER"):
+        value = getattr(creds, name)
+        if not isinstance(value, str) or not value.strip():
+            raise ValueError(f"{name} in psql_credentials.py must be a non-empty string")
+    if not isinstance(creds.PGPASSWORD, str):
+        raise ValueError("PGPASSWORD in psql_credentials.py must be a string")
+    try:
+        port = int(creds.PGPORT)
+    except (TypeError, ValueError) as error:
+        raise ValueError("PGPORT in psql_credentials.py must be an integer") from error
+    if not 1 <= port <= 65535:
+        raise ValueError("PGPORT in psql_credentials.py must be between 1 and 65535")
+    try:
+        import psycopg2
+    except ImportError as error:
+        raise ValueError("The psycopg2 database driver is missing. Install psycopg2 "
+                         "(or psycopg2-binary on Windows) before starting a real run.") from error
+    return dict(host=creds.PGHOST.strip(), port=port, dbname=creds.PGDATABASE,
+                user=creds.PGUSER, password=creds.PGPASSWORD)
+
+
 class DatabaseWorker:
     """Current-run retry only. CSV files and closed ROOT files are the backlog."""
     def __init__(self, session, connect_factory=None):
@@ -331,11 +367,9 @@ class DatabaseWorker:
 
     @staticmethod
     def connect():
+        config = load_database_config()
         import psycopg2
-        import psql_credentials as creds
-        conn = psycopg2.connect(host=creds.PGHOST, port=creds.PGPORT,
-                                dbname=creds.PGDATABASE, user=creds.PGUSER,
-                                password=creds.PGPASSWORD, connect_timeout=3,
+        conn = psycopg2.connect(**config, connect_timeout=3,
                                 options="-c timezone=UTC -c statement_timeout=5000",
                                 keepalives=1, keepalives_idle=5,
                                 keepalives_interval=2, keepalives_count=2)
@@ -774,8 +808,9 @@ class Session:
             self.db_wake.set()
 
     def storage_error(self, label, error):
-        message = f"{label} storage error: {error}. Acquisition continues; saving may be incomplete."
-        self.log.error(message)
+        activity = "Acquisition has stopped" if self.stop.is_set() else "Acquisition continues"
+        message = f"{label} storage error: {error}. {activity}; saving may be incomplete."
+        self.log.error(message, exc_info=True)
         self.set_status(error=message)
         self.alert("storage", message)
 
@@ -858,6 +893,11 @@ def main(argv=None):
     folder = DATA_ROOT / "DAQ" / args.run_name
     if folder.exists():
         raise SystemExit(f"Run {args.run_name!r} already exists at {folder}. Choose a different --run-name.")
+    if not args.demo:
+        try:
+            load_database_config()
+        except ValueError as error:
+            raise SystemExit(f"Cannot start real EVO acquisition: {error}") from None
     simulator = lease = session = viewer = None
     threads = []
     previous_handlers = {}
