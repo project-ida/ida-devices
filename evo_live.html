@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>EVO Recorder</title>
+<style>
+:root{color-scheme:light;--bg:#ededed;--line:#b5b9be;--text:#202428;--muted:#586069;--blue:#165f9d;--orange:#a04a10;--warning:#805400;--error:#a32222}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:13px/1.4 "Segoe UI",Arial,sans-serif}main{max-width:1500px;margin:auto;padding:10px 14px 12px}header,.controls,.run-status,.chart-title,.notice{display:flex;align-items:center;gap:16px}header{justify-content:space-between;min-height:36px;border-bottom:1px solid var(--line);padding-bottom:8px}h1{font-size:17px;font-weight:600;margin:0}h2{font-size:13px;font-weight:600;margin:0;min-width:52px}.controls{gap:20px}button{font:13px "Segoe UI",Arial,sans-serif;padding:5px 15px;border:1px solid #8b929a;border-radius:2px;background:#fafafa;color:var(--text);cursor:pointer;white-space:nowrap}button:hover{background:#e1e7ed;border-color:#58697a}button:disabled{color:#74797e;background:#e7e7e7;border-color:#c0c3c6;cursor:default}button:focus-visible,summary:focus-visible,input:focus-visible{outline:2px solid var(--blue);outline-offset:2px}.state{font-weight:600;color:var(--warning);white-space:nowrap}.state.recording,.state.saved{color:#285b36}.state.error{color:var(--error)}[hidden]{display:none!important}.banner{padding:5px 8px;margin-top:7px;border-left:3px solid #a47a12;background:#fff5d4;color:#654500;font-size:12px}.error-box{border-color:var(--error);background:#fff0f0;color:var(--error);white-space:pre-wrap;overflow-wrap:anywhere}.run-status{flex-wrap:wrap;gap:4px 22px;padding:8px 0;color:var(--muted);font-size:12px}.run-status strong{color:var(--text);font-family:Consolas,monospace;font-weight:400;font-size:13px}.sub{color:var(--muted);font-size:12px}.run-status .sub{margin-left:5px}.charts{display:flex;flex-direction:column;gap:9px}.chart{border:1px solid var(--line);background:white}.chart-title{min-height:43px;padding:5px 12px;border-bottom:1px solid #d5d8db;background:#f5f5f5;flex-wrap:wrap;gap:2px 16px}.chart-title .window{margin-left:auto;color:var(--muted);font-size:12px}.value{font:26px/1.2 Consolas,"Courier New",monospace;white-space:nowrap;min-width:185px}.value small{font-size:18px}#voltage{color:var(--blue)}#current{color:var(--orange)}.stale{color:var(--warning)!important}.plot{height:clamp(180px,26vh,260px)}canvas{display:block;width:100%;height:100%}.notice{justify-content:space-between;align-items:flex-start;font-size:11px;color:var(--muted);margin:5px 0 8px;gap:8px}#connection{white-space:nowrap}.folder{display:flex;align-items:center;gap:10px;border-top:1px solid var(--line);padding-top:7px}.folder label{white-space:nowrap;color:var(--muted);font-size:12px}input{min-width:0;flex:1;border:1px solid #c3c7cb;border-radius:0;background:#fafafa;color:var(--text);font:12px/1.5 Consolas,monospace;padding:3px 6px;cursor:text}.file{overflow-wrap:anywhere;color:var(--muted);font-size:11px;margin:3px 0 7px}.details{border-top:1px solid #c3c7cb;padding:5px 0}summary{cursor:pointer;color:#454d55;font-size:12px}.detail-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;padding:10px 0}.label{color:var(--muted);font-size:11px}.detail-value{font:12px/1.5 Consolas,monospace;overflow-wrap:anywhere}.details p{font-size:11px;color:var(--muted);margin:5px 0}.details .sub{margin-top:7px}pre{white-space:pre-wrap;overflow-wrap:anywhere;font:12px/1.5 Consolas,monospace;margin:7px 0}#notification{margin:5px 0;color:var(--warning);font-size:12px;overflow-wrap:anywhere}footer{border-top:1px solid var(--line);padding-top:7px;margin-top:2px;color:#454d55;font-size:11px}footer strong{font-weight:600}
+@media(max-width:700px){main{padding:8px}.controls{gap:10px}.run-status{gap:4px 14px}.detail-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.notice{flex-direction:column}.chart-title{gap:2px 10px}.chart-title .window{display:none}.value{min-width:155px;font-size:23px}.chart-title .sub{font-size:11px}.folder{align-items:flex-start;flex-direction:column;gap:3px}.folder input{width:100%;flex:auto}}@media(max-width:420px){header{gap:7px;flex-wrap:wrap}.controls{justify-content:space-between;flex:1;min-width:235px}.chart-title .sub{flex-basis:100%;padding-left:62px}}
+</style>
+</head>
+<body>
+<main>
+<header><h1>EVO Recorder</h1><div class="controls"><span id="state" class="state" role="status">Connecting…</span><button id="pause" type="button">Pause</button></div></header>
+<div id="synthetic" class="banner" hidden><strong>SIMULATED DATA</strong> — offline demonstration; no EVO measurements.</div>
+<div id="message" class="banner error-box" role="alert" hidden></div>
+<section class="run-status" aria-label="Recording progress">
+<span>Replies/s · V + I: <strong id="rate">—</strong><span id="target" class="sub">target —</span></span>
+<span>ROOT written / synced: <strong id="records">—</strong></span>
+<span>Elapsed: <strong id="elapsed">—</strong></span>
+<span id="sync">Waiting for the first save</span><span>Database: <strong id="database">Waiting</strong></span><span>1s rows saved / pending: <strong id="averages">0 / 0</strong></span>
+</section>
+<section class="charts" aria-label="Recent readings">
+<div class="chart"><div class="chart-title"><h2>Voltage</h2><div id="voltage" class="value">— <small>V</small></div><span id="voltage-age" class="sub">Waiting for a reading</span><span class="window">120-second window</span></div><div class="plot"><canvas id="voltage-plot" role="img" aria-label="Voltage in volts against elapsed session time in seconds"></canvas></div></div>
+<div class="chart"><div class="chart-title"><h2>Current</h2><div id="current" class="value">— <small>mA</small></div><span id="current-age" class="sub">Waiting for a reading</span><span class="window">120-second window</span></div><div class="plot"><canvas id="current-plot" role="img" aria-label="Current in milliamps against elapsed session time in seconds"></canvas></div></div>
+</section>
+<div class="notice"><span>Time is measured by the computer; voltage and current are read in sequence. Gaps mark interrupted or delayed readbacks.</span><span id="connection" role="status">Connecting to local recorder…</span></div>
+<div id="notification" hidden></div>
+<div class="folder"><label for="folder">Recording folder</label><input id="folder" readonly value="Waiting for the recorder…" title="Click to select and copy the recording folder"></div><div id="current-file" class="file"></div>
+<details class="details"><summary>Recording diagnostics</summary>
+<div class="detail-grid">
+<div><div class="label">Measurements received</div><div id="received" class="detail-value">—</div></div>
+<div><div class="label">Connection / reconnect attempts</div><div id="reconnect" class="detail-value">—</div></div>
+<div><div class="label">Raw readings lost</div><div id="lost" class="detail-value">0</div></div>
+<div><div class="label">ROOT files awaiting registration</div><div id="pending-roots" class="detail-value">0</div></div>
+<div><div class="label">One-second rows uploaded</div><div id="uploaded" class="detail-value">0</div></div>
+<div><div class="label">Last sync (computer time)</div><div id="sync-time" class="detail-value">—</div></div>
+<div><div class="label">Stop reason</div><div id="stop-reason" class="detail-value">—</div></div>
+</div>
+<p>“Synced” counts records included in a completed disk sync request; it is not a guarantee against every power failure.</p>
+</details>
+<details class="details"><summary>Device identity and settings at connection · not continuously updated</summary><div id="settings-time" class="sub"></div><pre id="settings">Waiting for the connection snapshot…</pre></details>
+<footer><strong>Keep the terminal open.</strong> Pause freezes this display only; Play returns to current data. Closing the browser leaves acquisition running. Use <strong>Ctrl+C in the terminal</strong> to stop and finish local saving.</footer>
+</main>
+<script>
+'use strict';
+const $=id=>document.getElementById(id);
+const finite=value=>typeof value==='number'&&Number.isFinite(value);
+const fmt=(value,digits=1)=>finite(value)?value.toLocaleString(undefined,{maximumFractionDigits:digits,minimumFractionDigits:digits}):'—';
+const whole=value=>finite(value)?value.toLocaleString(undefined,{maximumFractionDigits:0}):'—';
+const states={connecting:'Connecting…',recording:'Recording',retrying:'Reconnecting…',stopping:'Finishing local saving…',saved:'Local recording finished',error:'Finished with recording errors'};
+const terminal=new Set(['saved','error']);
+let frame=null,finalSeen=false,paused=false,apiError='',lastReceived=0,pollTimer=null,generation=0;
+function showMessages(){
+ const messages=[frame?.status?.error,apiError].filter(Boolean);
+ $('message').textContent=messages.join('\n');$('message').hidden=messages.length===0;
+}
+function reading(name,status){
+ const item=status.latest?.[name],unitName=name==='voltage'?'V':'mA';
+ const age=finite(item?.age_s)?item.age_s+Math.max(0,(performance.now()-lastReceived)/1000):null;
+ const stale=!!item&&(status.state==='retrying'||status.state==='connecting'||!!apiError||(finite(age)&&age>2));
+ const el=$(name);el.replaceChildren(document.createTextNode(fmt(item?.value,4)+' '));
+ const unit=document.createElement('small');unit.textContent=item?.unit||unitName;el.append(unit);el.classList.toggle('stale',stale);
+ const note=$(name+'-age');note.classList.toggle('stale',stale);
+ note.textContent=!item?'No reading received':terminal.has(status.state)?'Last recorded value':stale?'Last received · stale'+(finite(age)?' · '+fmt(age)+' s ago':''):finite(age)?fmt(age)+' s since receipt':'Last received value';
+}
+function updateStatus(status){
+ const state=String(status.state||'unknown'),final=terminal.has(state);
+ $('state').textContent=states[state]||'Unknown state';$('state').className='state '+(Object.hasOwn(states,state)?state:'error');
+ $('synthetic').hidden=status.synthetic!==true;
+ $('pause').disabled=final;
+ reading('voltage',status);reading('current',status);
+ $('rate').textContent=fmt(status.achieved_qps);$('target').textContent='target '+fmt(status.target_qps)+' queries/s';
+ $('records').textContent=whole(status.records_written)+' / '+whole(status.records_synced);
+ $('sync').textContent=final?'Recording finished':'ROOT chunks are written independently of 1s averages';
+ $('elapsed').textContent=fmt(status.elapsed_s)+' s';$('received').textContent=whole(status.measurements_received);
+ $('reconnect').textContent=whole(status.connection_id)+' / '+whole(status.reconnect_attempts);
+ $('database').textContent=status.database_state||'Waiting';
+ $('averages').textContent=whole(status.averages_saved)+' / '+whole(status.averages_pending);
+ $('uploaded').textContent=whole(status.averages_uploaded);$('lost').textContent=whole(status.lost_readings);
+ $('pending-roots').textContent=whole(status.pending_root_files);
+ $('sync-time').textContent=status.last_sync_utc||'Not yet synced';$('stop-reason').textContent=status.stop_reason||'—';
+ if(status.output_dir)$('folder').value=status.output_dir;$('current-file').textContent=status.current_file?'Current file: '+status.current_file:'';
+ $('settings-time').textContent=status.settings_captured_utc?'Snapshot captured: '+status.settings_captured_utc:'No settings snapshot received';
+ $('settings').textContent=JSON.stringify({identity:status.identity??null,settings:status.settings_snapshot??null},null,2);
+ $('notification').hidden=!status.last_notification;$('notification').textContent=status.last_notification?'Supply notification: '+String(status.last_notification):'';
+ showMessages();
+}
+function tick(value){return finite(value)?Number(value.toPrecision(5)).toLocaleString(undefined,{maximumSignificantDigits:5}):'—';}
+function draw(name){
+ const canvas=$(name+'-plot'),rect=canvas.getBoundingClientRect(),w=rect.width,h=rect.height,dpr=window.devicePixelRatio||1;if(w<1||h<1)return;
+ const pw=Math.round(w*dpr),ph=Math.round(h*dpr);if(canvas.width!==pw||canvas.height!==ph){canvas.width=pw;canvas.height=ph;}
+ const ctx=canvas.getContext('2d');ctx.setTransform(dpr,0,0,dpr,0,0);ctx.clearRect(0,0,w,h);
+ const left=70,right=20,top=22,bottom=48,W=w-left-right,H=h-top-bottom;
+ const elapsed=finite(frame?.elapsed_s)?frame.elapsed_s:finite(frame?.status?.elapsed_s)?frame.status.elapsed_s:0;
+ const xmax=Math.max(120,elapsed),xmin=xmax-120;
+ const series=frame?.[name],xs=Array.isArray(series?.time_s)?series.time_s:[],ys=Array.isArray(series?.values)?series.values:[],n=Math.min(xs.length,ys.length);
+ let ymin=Infinity,ymax=-Infinity,count=0;
+ for(let i=0;i<n;i++){if(finite(xs[i])&&xs[i]>=xmin&&xs[i]<=xmax&&finite(ys[i])){ymin=Math.min(ymin,ys[i]);ymax=Math.max(ymax,ys[i]);count++;}}
+ if(!count){ymin=-1;ymax=1;}else{const pad=Math.max((ymax-ymin)*.12,Math.abs(ymax)*.01,.001);ymin-=pad;ymax+=pad;}
+ const X=x=>left+(x-xmin)/120*W,Y=y=>top+(ymax-y)/(ymax-ymin)*H;
+ ctx.font='11px "Segoe UI", sans-serif';ctx.lineWidth=1;
+ for(let i=0;i<=4;i++){const x=xmin+120*i/4,px=X(x);ctx.strokeStyle='#e3e5e7';ctx.beginPath();ctx.moveTo(px,top);ctx.lineTo(px,top+H);ctx.stroke();ctx.fillStyle='#586069';ctx.textAlign='center';ctx.fillText(fmt(x,0),px,top+H+19);}
+ for(let i=0;i<=4;i++){const y=ymin+(ymax-ymin)*i/4,py=Y(y);ctx.strokeStyle='#e3e5e7';ctx.beginPath();ctx.moveTo(left,py);ctx.lineTo(left+W,py);ctx.stroke();ctx.fillStyle='#586069';ctx.textAlign='right';ctx.fillText(tick(y),left-8,py+4);}
+ ctx.strokeStyle='#aab0b6';ctx.strokeRect(left,top,W,H);
+ ctx.fillStyle='#586069';ctx.textAlign='center';ctx.fillText('Elapsed session time (s)',left+W/2,h-6);
+ if(!count){ctx.fillText('Waiting for readings',left+W/2,top+H/2);return;}
+ ctx.save();ctx.beginPath();ctx.rect(left,top,W,H);ctx.clip();ctx.strokeStyle=name==='voltage'?'#165f9d':'#a04a10';ctx.fillStyle=ctx.strokeStyle;ctx.lineWidth=1.4;ctx.beginPath();let segmentLength=0,lastX=0,lastY=0;
+ function finishSegment(){if(segmentLength===1)ctx.fillRect(lastX-1.5,lastY-1.5,3,3);segmentLength=0;}
+ for(let i=0;i<n;i++){if(!finite(xs[i])||!finite(ys[i])||xs[i]<xmin||xs[i]>xmax){finishSegment();continue;}lastX=X(xs[i]);lastY=Y(ys[i]);if(segmentLength)ctx.lineTo(lastX,lastY);else ctx.moveTo(lastX,lastY);segmentLength++;}
+ finishSegment();
+ ctx.stroke();ctx.restore();
+}
+function render(){draw('voltage');draw('current');}
+
+const resizeObserver=new ResizeObserver(render);resizeObserver.observe($('voltage-plot').parentElement);resizeObserver.observe($('current-plot').parentElement);
+$('folder').addEventListener('click',()=>$('folder').select());
+$('pause').addEventListener('click',()=>{
+ if(finalSeen)return;
+ paused=!paused;generation++;clearTimeout(pollTimer);
+ $('pause').textContent=paused?'Play':'Pause';
+ $('pause').setAttribute('aria-pressed',String(paused));
+ if(paused){
+  $('state').textContent='Display paused · recording continues';$('state').className='state';
+  $('connection').textContent='Play returns to the latest data';
+ }else{
+  $('state').textContent='Returning to live data…';
+  poll();
+ }
+});
+async function poll(){
+ if(paused||finalSeen)return;
+ const started=performance.now(),requestGeneration=generation;
+ try{
+  const response=await fetch('/api/frame',{cache:'no-store',mode:'same-origin',credentials:'same-origin',signal:AbortSignal.timeout(5000)});
+  if(!response.ok)throw new Error('Server returned '+response.status);
+  const next=await response.json();
+  if(!next.status||!Object.hasOwn(states,next.status.state))throw new Error('Unrecognised recorder status');
+  if(paused||requestGeneration!==generation)return;
+  frame=next;lastReceived=performance.now();apiError='';finalSeen=terminal.has(next.status.state);
+  updateStatus(next.status);render();
+  $('connection').textContent=finalSeen?'Final view':next.status.state==='retrying'?'Recorder is reconnecting to EVO':'Live local recorder';
+ }catch(error){
+  if(paused||requestGeneration!==generation)return;
+  apiError='Recorder unavailable: '+error.message+'. Check its terminal; it may have stopped.';
+  if(frame?.status)updateStatus(frame.status);
+  $('state').textContent='Viewer disconnected';$('state').className='state error';showMessages();
+ }finally{
+  if(!paused&&!finalSeen&&requestGeneration===generation)pollTimer=setTimeout(poll,Math.max(0,200-(performance.now()-started)));
+ }
+}
+setInterval(()=>{
+ if(paused||finalSeen||!frame?.status)return;
+ reading('voltage',frame.status);reading('current',frame.status);
+ if(performance.now()-lastReceived>2000){$('state').textContent='Viewer stale';$('state').className='state';}
+},250);
+render();poll();
+</script>
+</body>
+</html>
