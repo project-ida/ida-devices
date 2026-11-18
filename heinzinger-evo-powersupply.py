@@ -3,9 +3,15 @@
 
 Examples
 --------
+    python heinzinger-evo-powersupply.py
     python heinzinger-evo-powersupply.py --evo-host 192.168.0.100 --run-name scan-1
     python heinzinger-evo-powersupply.py --evo-host 192.168.0.100 --run-name scan-2 --gui
     python heinzinger-evo-powersupply.py --run-name gui-check --demo --gui
+
+With no arguments, interactive setup asks for the required run name, EVO host
+(Enter uses 192.168.0.100), and GUI choice (yes/no; Enter means no). Supplying
+any command-line arguments uses the usual argument validation without prompts.
+Use --help to see all available command-line options.
 
 Optional arguments: --evo-port (6000), --evo-serial (464222713), --qps (250
 TOTAL queries/s, alternating voltage/current), --root-file-mb (10 decimal MB).
@@ -869,8 +875,44 @@ def start_viewer(session):
     return server
 
 
+def prompt_for_args():
+    print("No command-line arguments supplied. Starting interactive setup.\n"
+          "To see the available command-line options, run this script with --help.\n")
+    try:
+        while True:
+            run_name = input("Run name (required): ").strip()
+            if not run_name:
+                print("A run name is required.")
+                continue
+            try:
+                validate_run_name(run_name)
+            except argparse.ArgumentTypeError as error:
+                print(error)
+            else:
+                break
+        evo_host = input("EVO host (press Enter to use 192.168.0.100): ").strip() or "192.168.0.100"
+        while True:
+            gui = input("Open web GUI? (yes/no; press Enter for no): ").strip().lower()
+            if gui in {"", "yes", "y", "no", "n"}:
+                break
+            print("Please enter yes or no, or press Enter for no.")
+    except EOFError:
+        raise SystemExit("\nInteractive setup cancelled: no input available.") from None
+    except KeyboardInterrupt:
+        print("\nInteractive setup cancelled.", file=sys.stderr)
+        raise SystemExit(130) from None
+    # Use the same argument parser and validation as a command-line run.
+    argv = [f"--run-name={run_name}", f"--evo-host={evo_host}"]
+    if gui in {"yes", "y"}:
+        argv.append("--gui")
+    return argv
+
+
 def parse_args(argv=None):
-    parser = argparse.ArgumentParser(description="Read-only EVO acquisition: raw ROOT and one-second CSV/PostgreSQL averages.")
+    argv = sys.argv[1:] if argv is None else list(argv)
+    parser = argparse.ArgumentParser(
+        description="Read-only EVO acquisition: raw ROOT and one-second CSV/PostgreSQL averages.",
+        epilog="Run without arguments for interactive setup (run name, EVO host and GUI choice).")
     parser.add_argument("--run-name", required=True, type=validate_run_name, help="Exact new folder name under ~/evo/DAQ")
     target = parser.add_mutually_exclusive_group(required=True)
     target.add_argument("--evo-host", help="EVO IP address or hostname")
@@ -880,7 +922,7 @@ def parse_args(argv=None):
     parser.add_argument("--qps", type=float, default=250, help="Total queries/s, shared by V and I (default/max: 250)")
     parser.add_argument("--root-file-mb", type=float, default=10, help="Approximate ROOT rotation threshold in decimal MB (default: 10)")
     parser.add_argument("--gui", action="store_true", help="Start the local web viewer and open the browser")
-    args = parser.parse_args(argv)
+    args = parser.parse_args(argv if argv else prompt_for_args())
     if not math.isfinite(args.qps) or not 0 < args.qps <= 250:
         parser.error("--qps must be positive and no greater than 250 (4 ms minimum spacing)")
     if not math.isfinite(args.root_file_mb) or args.root_file_mb <= 0:
