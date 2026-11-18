@@ -65,7 +65,8 @@ def main():
         current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         print(f"[{current_time}] Running Rclone copy from {source_folder} to {destination_folder}...")
 
-        # Run the Rclone command and capture the output
+        # *.root excludes both pending .root files and in-progress .writing.root
+        # files at every folder depth. Registered .root2 files remain eligible.
         rclone_command = f'rclone copy -v --progress "{source_folder}" "{destination_folder}" --exclude "*.root"'
         try:
             result = subprocess.run(rclone_command, shell=True, capture_output=False, text=True)
